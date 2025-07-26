@@ -2,7 +2,7 @@
 
 A very early state, kind of a scaffolding of a daw project export tool (and later import maybe) for the Renoise DAW, starting from version 3.5 and upwards.
 
-Sadly I had to halt the development of this tool, due to hefty, not rationally explainable API limitations, which would be easy to add, because everything already is implemented under the hood.
+Sadly I had to halt the development of this tool, due to API limitations, which would be easy to add, because everything already is implemented under the hood.
 
 #### Working so far
 
@@ -29,7 +29,7 @@ Sadly I had to halt the development of this tool, due to hefty, not rationally e
 
 #### This can't work due to the API limitations
 
-- VST2/AU preset generation/export. Renoise does not provide any way to get the .fxp / .aupreset data. The device.active_preset data only contains the individual inline song data of the VST2 or AU plugin, assumingly different to VST3. This is already implemented in Renoise via "import preset..." and "export preset...", just not made available in the API for some strange reasons.
+- VST2/AU preset generation/export. Renoise does not provide any way to get the .fxp / .aupreset data. The device.active_preset data only contains the individual inline song data of the VST2 or AU plugin, assumingly different to VST3. This is already implemented in Renoise via "import preset..." and "export preset...", just not made available in the API for unknown reasons.
 - VST3 preset export might be wonky, because it grabs the preset data from device.active_preset_data's `<ParameterChunk>` node, assuming that this is simply the complete .vstpreset. But it might not be the case for every plugin...
 - parameterID mapping, so most automation won’t work, except for some VST3 plugins still using the index as parameter id (e.g. Redux VST3)
 - The correct VST2 plugin identifier can't be set (an integer, which you see as "Unique ID" in the plugin info tooltip), since it is neither available in the API nor in device.active_preset_data, but required for VST2 preset loading
@@ -53,7 +53,7 @@ A song has to fulfill the following requirements for a working export:
 
 ## How to build from source
 
-macOS and Linux users use the `build_for_mac_linux.sh` script. Might need a chmod +x first. Windows users can test the same script, but most certainly will have to zip this directory, and then rename the zip to "ffx.tools.dawproject.xrnx".
+macOS and Linux users use the `build_for_mac_linux.sh` script. Might need a chmod +x first. Windows users can test the same script, but most certainly will have to zip this directory, and then rename the zip to "ffx.tools.DawProject.xrnx".
 
 ## Feel free to contribute
 
