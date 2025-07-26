@@ -1,0 +1,6 @@
+tmp
+examples
+.DS_Store
+config.json
+.vscode
+ffx.tools.DawProject.xrnx

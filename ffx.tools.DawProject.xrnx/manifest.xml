@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RenoiseScriptingTool doc_version="0">
+  <ApiVersion>6.2</ApiVersion>
+  <Id>ffx.tools.DawProject</Id>
+  <Version>0.1</Version>
+  <Author>Jurek Raben, ...</Author>
+  <Name>Daw Project Support</Name>
+  <Category>Tools</Category>
+  <Description>Import or export .dawproject files</Description>
+  <Homepage>https://www.renoise.com</Homepage>
+</RenoiseScriptingTool>

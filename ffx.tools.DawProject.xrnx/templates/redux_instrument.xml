@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FilterDevicePreset doc_version="14">
+  <DeviceSlot type="AudioPluginDevice">
+    <IsMaximized>true</IsMaximized>
+    <ActiveProgram>0</ActiveProgram>
+    <PluginType>VST3</PluginType>
+    <PluginIdentifier>5653545252445872656E6F6973652072</PluginIdentifier>
+    <PluginDisplayName>VST3: Renoise: Redux</PluginDisplayName>
+    <PluginShortDisplayName>Redux</PluginShortDisplayName>
+    <PluginEditorWindowPosition>-1,-1</PluginEditorWindowPosition>
+    <ParameterChunkType>Chunk</ParameterChunkType>
+    <ParameterChunk><![CDATA[CHUNKDATA]]></ParameterChunk>
+  </DeviceSlot>
+</FilterDevicePreset>
