@@ -40,7 +40,7 @@ Sadly I had to halt the development of this tool, due to hefty, not rationally e
 
 A song has to fulfill the following requirements for a working export:
 
-- Only one instrument per track! Use Ledger's splitter tool!
+- Only one instrument per track! Use [Fladd's track splitter tool](https://www.renoise.com/tools/split-into-separate-tracks)!
 - The Instr. Automation Device has to be placed onto the track where the target instrument is playing
 
 #### Workarounds
