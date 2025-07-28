@@ -63,8 +63,8 @@ function NoteAbstraction:generateSongEvents()
 
       if (position.line == 1 and position.column == 1) then
         local _seqIsMuted = Song.sequencer:track_sequence_slot_is_muted(position.track, seqIndex)
-        if (seqIsMuted[noteKey] ~= _seqIsMuted) then
-          seqIsMuted[noteKey] = _seqIsMuted
+        if (seqIsMuted[position.track] ~= _seqIsMuted) then
+          seqIsMuted[position.track] = _seqIsMuted
           checkForNoteEvent(noteKey)
         end
 
@@ -72,7 +72,7 @@ function NoteAbstraction:generateSongEvents()
           pattern:track(position.track), lineOffset)
       end
 
-      if noteColumn.is_empty then
+      if noteColumn.is_empty or seqIsMuted[position.track] then
         goto continue
       end
 

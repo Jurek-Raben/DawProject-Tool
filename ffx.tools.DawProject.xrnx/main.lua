@@ -3,7 +3,7 @@ end
 --------------------------------------------------------------------------------
 -- Daw Project
 -- by Jurek Raben
--- v0.1
+-- v0.1.1
 --
 -- Licensed under CC Attribution-NonCommercial-ShareAlike 4.0 International
 -- Info here: https://creativecommons.org/licenses/by-nc-sa/4.0/
@@ -136,9 +136,14 @@ function DawProject:generateNoteEventsDataForXML(songEvents, automationPoints)
 
     local clips = lanesObj[noteEvent.trackNum].Clips.Clip
     if (clips[noteEvent.seqNum] == nil) then
+      local trackDelay = Song:track(noteEvent.trackNum).output_delay / (60000 / (Song.transport.bpm))
+      local clipTimestamp = noteEvent.patternTimestamp * scaleFactor + trackDelay
+      if (clipTimestamp < 0) then
+        clipTimestamp = 0
+      end
       clips[noteEvent.seqNum] = {
         _attr = {
-          time = noteEvent.patternTimestamp * scaleFactor,
+          time = clipTimestamp,
           duration = noteEvent.patternDuration * scaleFactor,
           playStart = "0.0",
           -- loopStart = "0.0",
