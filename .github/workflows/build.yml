@@ -18,8 +18,16 @@ jobs:
           mkdir -p build
           ./build_for_mac_linux.sh
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      #      - name: Upload artifact
+      #        uses: actions/upload-artifact@v4
+      #        with:
+      #          name: ffx.tools.DawProject.xrnx-${{ github.ref_name }}-${{ github.event.head_commit.message }}
+      #          path: build/ffx.tools.DawProject.xrnx
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
         with:
-          name: Release-${{ github.head_ref || github.ref_name }}-${{ github.event.head_commit.message }}
-          path: build/ffx.tools.DawProject.xrnx
+          tag_name: auto-release-${{ github.run_number }}
+          name: 'ffx.tools.DawProject.xrnx'
+          body: 'DawProject ${{ github.ref_name }} (${{ github.event.head_commit.message }})'
+          files: build/ffx.tools.DawProject.xrnx
