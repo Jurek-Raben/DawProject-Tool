@@ -31,6 +31,8 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: auto-release-${{ github.run_number }}
-          name: 'ffx.tools.DawProject.xrnx ${{ github.run_number }}'
-          body: 'DawProject ${{ github.ref_name }} (${{ github.event.head_commit.message }})'
+          name: 'ffx.tools.DawProject.xrnx ${{ github.ref_name }}'
+          body: 'Pushed ${{ github.ref_name }} (${{ github.event.head_commit.message }})'
+          draft: false
+          prerelease: false
           files: build/ffx.tools.DawProject.xrnx
