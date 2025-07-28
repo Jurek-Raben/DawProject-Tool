@@ -50,6 +50,7 @@ DawProject.defaultConfig = {
   convertToRedux = true,
   exportVST2 = false,
   exportVST3 = true,
+  addTrackDelayToClips = true,
   devMode = true
 }
 
@@ -57,6 +58,7 @@ DawProject.configDescription = {
   convertToRedux = { type = "boolean", txt = "Convert sample instruments to Redux" },
   exportVST2 = { type = "boolean", txt = "Export VST2 plugins (not possible due to api limitations)" },
   exportVST3 = { type = "boolean", txt = "Export VST3 plugins" },
+  addTrackDelayToClips = { type = "boolean", txt = "Add the track delay ms to the clip position" },
   devMode = { type = "boolean", txt = "Adds some debugging menu entries / functionality" },
 }
 
@@ -128,7 +130,7 @@ function DawProject:generateNoteEventsDataForXML(songEvents, automationPoints)
           id = 'lanes' .. noteEvent.trackNum .. '-' .. noteEvent.seqNum,
           track = 'track' .. noteEvent.trackNum
         },
-        Points = automationPoints[noteEvent.trackNum]
+        Points = automationPoints[noteEvent.trackNum],
       }
       coroutine.yield()
       fancyStatus:show_status('Exporting note data to .dawproject' .. Helpers:generateStatusAnimation())
@@ -136,7 +138,10 @@ function DawProject:generateNoteEventsDataForXML(songEvents, automationPoints)
 
     local clips = lanesObj[noteEvent.trackNum].Clips.Clip
     if (clips[noteEvent.seqNum] == nil) then
-      local trackDelay = Song:track(noteEvent.trackNum).output_delay / (60000 / (Song.transport.bpm))
+      local trackDelay = 0
+      if (config['addTrackDelayToClips']) then
+        trackDelay = Song:track(noteEvent.trackNum).output_delay / (60000 / (Song.transport.bpm))
+      end
       local clipTimestamp = noteEvent.patternTimestamp * scaleFactor + trackDelay
       if (clipTimestamp < 0) then
         clipTimestamp = 0
@@ -145,10 +150,10 @@ function DawProject:generateNoteEventsDataForXML(songEvents, automationPoints)
         _attr = {
           time = clipTimestamp,
           duration = noteEvent.patternDuration * scaleFactor,
-          playStart = "0.0",
+          playStart = "0", -- -trackDelay,
           -- loopStart = "0.0",
           -- loopEnd = "8.0",
-          enable = "true",
+          enable = noteEvent.enabled and "true" or "false",
           name = 'track' .. noteEvent.trackNum .. ' pattern' .. noteEvent.patternNum
         },
         Lanes = {
@@ -249,11 +254,18 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
 end
 
 function DawProject:addTrackToStructure(track, targetObj)
+  local comment = ''
+  if (track.output_delay ~= 0) then
+    comment = comment .. "Delay: " .. track.output_delay
+  end
+
+
   local _trackObj = {
     _attr = {
       id = 'track' .. SongHelpers:getTrackIndex(track),
       name = Helpers:prepareNameForXML(track.name),
-      color = '#' .. Helpers:rgbToHex(track.color[1], track.color[2], track.color[3])
+      color = '#' .. Helpers:rgbToHex(track.color[1], track.color[2], track.color[3]),
+      comment = comment
     },
     Channel = {
       _attr = {
