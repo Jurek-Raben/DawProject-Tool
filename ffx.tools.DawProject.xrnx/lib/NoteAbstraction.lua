@@ -63,8 +63,8 @@ function NoteAbstraction:generateSongEvents()
 
       if (position.line == 1 and position.column == 1) then
         local _seqIsMuted = Song.sequencer:track_sequence_slot_is_muted(position.track, seqIndex)
-        if (seqIsMuted[noteKey] ~= _seqIsMuted) then
-          seqIsMuted[noteKey] = _seqIsMuted
+        if (seqIsMuted[position.track] ~= _seqIsMuted) then
+          seqIsMuted[position.track] = _seqIsMuted
           checkForNoteEvent(noteKey)
         end
 
@@ -97,7 +97,8 @@ function NoteAbstraction:generateSongEvents()
           absLineNum = lineOffset + position.line - 1,
           timestamp = (lineOffset + position.line - 1) * 256 + noteColumn.delay_value,
           patternRelTimestamp = (position.line - 1) * 256 + noteColumn.delay_value,
-          patternTimestamp = lineOffset * 256
+          patternTimestamp = lineOffset * 256,
+          enabled = not seqIsMuted[position.track],
         }
         if (noteColumn.volume_value < 128) then
           lastVelocities[noteKey] = noteColumn.volume_value
