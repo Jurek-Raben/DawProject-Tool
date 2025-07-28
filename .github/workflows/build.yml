@@ -1,0 +1,25 @@
+name: Release Build on main push
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Create release build
+        run: |
+          mkdir -p build
+          ./build_for_mac_linux.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Release-${{ github.head_ref || github.ref_name }}-${{ github.event.head_commit.message }}
+          path: build/ffx.tools.DawProject.xrnx
