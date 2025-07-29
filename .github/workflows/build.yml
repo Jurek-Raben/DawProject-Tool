@@ -27,12 +27,19 @@ jobs:
       #          name: ffx.tools.DawProject.xrnx-${{ github.ref_name }}-${{ github.event.head_commit.message }}
       #          path: build/ffx.tools.DawProject.xrnx
 
+      - name: Vorletzte Commit-Message holen
+        id: get_msg
+        run: |
+          msg=$(git log -2 --pretty=format:%B | tail -n1)
+          echo "::set-output name=body::$msg"
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: auto-release-${{ github.run_number }}
           name: 'ffx.tools.DawProject.xrnx'
           body: '${{ github.event.head_commit.message }}'
+          #          body: ${{ steps.get_msg.outputs.body }}
           draft: false
           prerelease: false
           files: build/ffx.tools.DawProject.xrnx
