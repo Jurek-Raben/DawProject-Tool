@@ -53,7 +53,13 @@ A song has to fulfill the following requirements for a working export:
 
 ## How to build from source
 
-macOS and Linux users use the `build_for_mac_linux.sh` script. Might need a chmod +x first. Windows users can test the same script, but most certainly will have to zip this directory, and then rename the zip to "ffx.tools.DawProject.xrnx".
+macOS and Linux users use the `./build_for_mac_linux.sh` script. Might need a chmod +x first. Windows users can test the same script, which should work in Windows 11 at least.
+
+You can also decide to build a bunch of binary vst-tools that I've lamely coded in Rust.
+
+These tools try to circumvent the current limitations of the Renoise API. The VST2 tool will give detailed infos for a given plugin path. If you want to use those via the tool settings, you will have to build these as first step with `./build_vst_tools.sh`.
+
+The tools require Rust / cargo to be installed on the system.
 
 ## Feel free to contribute
 
@@ -96,3 +102,5 @@ Licensed under CC Attribution-NonCommercial-ShareAlike 4.0 International - https
 Can be changed.
 
 ## Download
+
+[Automatic release builds](https://github.com/Jurek-Raben/DawProject-Tool/releases)

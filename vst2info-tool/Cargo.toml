@@ -1,0 +1,9 @@
+[package]
+name = "vst2info-tool"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+vst2 = "0.0.1"
+base64 = "0.22.1"
+json = "0.12.4"
