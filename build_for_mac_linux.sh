@@ -1,2 +1,3 @@
 cd ./ffx.tools.DawProject.xrnx
-tar -acvf ../build/ffx.tools.DawProject.xrnx --exclude="./tmp" --exclude="/.github" --exclude="/.git" --exclude="/.vscode" --exclude="./examples" --exclude="./tmp" --exclude="./config.json" *
+rm ../build/ffx.tools.DawProject.xrnx
+zip -r ../build/ffx.tools.DawProject.xrnx . -x "./tmp/*" "/.github/*" "/.git/*" "/.vscode/*" "./examples/*" "./tmp/*" "./config.json" ".DS_Store" ".gitignore"
