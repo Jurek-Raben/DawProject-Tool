@@ -1,3 +1,13 @@
+/*!
+ * ------------------------------------------------------------------------
+ * VST2 Info Extractor Tool
+ * by Jurek Raben
+ *
+ * Licensed under CC Attribution-NonCommercial-ShareAlike 4.0 International
+ * Info here: https://creativecommons.org/licenses/by-nc-sa/4.0/
+ * ------------------------------------------------------------------------
+ */
+
 extern crate vst2;
 
 use std::env;
