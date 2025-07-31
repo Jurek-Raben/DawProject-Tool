@@ -18,6 +18,7 @@ require('lib/GeneralHelpers')
 require('lib/SongHelpers')
 require('lib/DeviceHelpers')
 require('lib/ReduxPluginHelpers')
+require('lib/Cache')
 
 --------------------------------------------------------------------------------
 -- Global helpers
@@ -28,13 +29,14 @@ Tool = renoise.tool()
 local fancyStatus = nil
 local process = nil
 local noteAbstraction = nil
-AutomatedParametersStore = {}
+
 
 --------------------------------------------------------------------------------
 
 class "DawProject"
 
 DawProject.configurator = nil
+DawProject.automatedParametersCache = Cache()
 local config = {}
 
 TempDir = './tmp'
@@ -186,6 +188,17 @@ function DawProject:generateNoteEventsDataForXML(songEvents, automationPoints)
   return lanesObj
 end
 
+function DawProject:mapExpressionType(automationEvent)
+  if (automationEvent.type == 'PB') then
+    return 'pitchBend'
+  end
+  if (automationEvent.type == 'CC') then
+    return 'channelController'
+  end
+
+  return nil
+end
+
 function DawProject:generateAutomationEventsDataForXML(songEvents)
   local automationEvents = songEvents.automationEvents
 
@@ -196,11 +209,11 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
   for trackNum, trackAutomationEvents in pairs(automationEvents) do
     coroutine.yield()
     fancyStatus:show_status('Exporting automation data to .dawproject' .. Helpers:generateStatusAnimation())
+
+
     for index, deviceAutomationEvents in pairs(trackAutomationEvents) do
       for _, automationEvent in pairs(deviceAutomationEvents) do
         local parameterIdPrefix = 'paramid-' .. trackNum .. '-' .. automationEvent.deviceIndex
-
-        print('automation prefix', parameterIdPrefix)
 
         if (automationsObj[trackNum] == nil) then
           automationsObj[trackNum] = {}
@@ -213,7 +226,10 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
             },
             Target = {
               _attr = {
-                parameter = parameterIdPrefix .. '-' .. index
+                parameter = parameterIdPrefix .. '-' .. index,
+                expression = DawProject:mapExpressionType(automationEvent),
+                controller = automationEvent.type == 'CC' and automationEvent.paramIndex or nil,
+                channel = "0"
               }
             },
             RealPoint = {}
@@ -225,11 +241,13 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
         end
 
         if (parametersObj[parameterIdPrefix][index] == nil) then
+          print('param', automationEvent.parameter.name, automationEvent.type, automationEvent.value, parameterIdPrefix,
+            index)
           parametersObj[parameterIdPrefix][index] = {
             _attr = {
               id = parameterIdPrefix .. '-' .. index,
               name = automationEvent.parameter.name,
-              parameterID = index - 1,
+              parameterID = automationEvent.paramIndex,
               unit = "normalized",
               min = "0",
               max = "1"
@@ -376,8 +394,8 @@ function DawProject:generateDevicesForXML(track)
   if (instr and instr.plugin_properties and instr.plugin_properties.plugin_device) then
     local deviceSavePath = 'instr-tr' .. trackIndex .. '-no' .. instrIndex ..
         '-' .. Helpers:prepareFilenameForXML(instr.name)
-    local parameterIdPrefix = 'paramid-' .. trackIndex .. '-' .. instrIndex
-    print('matching instr parameterIdPrefix', parameterIdPrefix)
+    local parameterIdPrefix = 'paramid-' .. trackIndex .. '-i' .. instrIndex
+    --print('matching instr parameterIdPrefix', parameterIdPrefix)
 
     self:addDeviceObj(devicesObj, instr.plugin_properties.plugin_device, deviceSavePath, parameterIdPrefix,
       'instrument', trackIndex)
@@ -435,7 +453,7 @@ function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterId
   local deviceId = DeviceHelpers:getActivePresetDataContent(device, 'PluginIdentifier')
 
   local automatedParametersObj = {
-    RealParameter = AutomatedParametersStore[parameterIdPrefix]
+    RealParameter = self.automatedParametersCache:get("parameters")[parameterIdPrefix]
   }
 
   if (parameterChunkData ~= nil and deviceId ~= nil) then
@@ -593,7 +611,7 @@ function DawProject:export()
       local songEvents = noteAbstraction:generateSongEvents()
 
       local automationEvents = DawProject:generateAutomationEventsDataForXML(songEvents)
-      AutomatedParametersStore = automationEvents.parametersObj
+      self.automatedParametersCache:set('parameters', automationEvents.parametersObj)
 
       local projectStructure = {
         Project = {

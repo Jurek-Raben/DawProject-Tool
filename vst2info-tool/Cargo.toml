@@ -2,6 +2,8 @@
 name = "vst2info-tool"
 version = "0.1.0"
 edition = "2024"
+"authors" = ["Jurek Raben"]
+repository = "https://github.com/Jurek-Raben/DawProject-Tool"
 
 [dependencies]
 vst2 = "0.0.1"

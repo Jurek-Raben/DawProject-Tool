@@ -150,28 +150,79 @@ end
 function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternTrack, lineOffset)
   local track = Song:track(trackNum)
 
+  local automationCache = Cache()
+
   for y = 2, #track.devices do
     local device = track:device(y)
     local targetDevice
-    local type = 'param'
-    local deviceIndex = y
+    local deviceIndex = tostring(y)
+
+    local getIndex = function(paramNum)
+      return paramNum - 1
+    end
+    local getType = function(paramNum)
+      return "automation"
+    end
+
+    local getInstrNum = function()
+      local instrCacheKey = 'instrnum_' .. trackNum
+      local targetInstrumentNum = automationCache:get(instrCacheKey)
+      if (targetInstrumentNum == nil) then
+        targetInstrumentNum = SongHelpers:getInstrumentIndexOfTrack(track)
+      end
+      if (targetInstrumentNum) then
+        automationCache:set(instrCacheKey, targetInstrumentNum)
+        return targetInstrumentNum
+      end
+
+      return nil
+    end
 
     if (device.device_path == "Audio/Effects/Native/*Instr. Automation") then
       --local targetInstrumentNum = DeviceHelpers:getActivePresetDataContent(device, 'LinkedInstrument') + 1
-      local targetInstrumentNum = SongHelpers:getInstrumentIndexOfTrack(track)
+      local targetInstrumentNum = getInstrNum()
       if (targetInstrumentNum) then
-        print('found autom dev at tr' .. trackNum .. ' target instr nr' .. targetInstrumentNum)
+        print('found instr autom dev at tr' .. trackNum .. ' target instr nr' .. targetInstrumentNum)
         targetDevice = Song:instrument(targetInstrumentNum)
-        deviceIndex = targetInstrumentNum
+        deviceIndex = "i" .. targetInstrumentNum
+
+        getIndex = function(paramNum)
+          local cacheKey = tostring(y) .. '_' .. paramNum
+          if (automationCache:get(cacheKey)) then
+            return automationCache:get(cacheKey)
+          end
+
+          local paramName = device:parameter(paramNum).name
+          local _targetDevice = targetDevice.plugin_properties.plugin_device
+          if (_targetDevice == nil) then
+            return nil
+          end
+          for c = 1, #_targetDevice.parameters do
+            if (_targetDevice:parameter(c).name == paramName) then
+              print('found param name ', paramName, ' at ', c)
+              automationCache:set(cacheKey, c - 1)
+              return c - 1
+            end
+          end
+          return nil
+        end
       end
     elseif (device.device_path == "Audio/Effects/Native/*Instr. MIDI Control") then
       --local targetInstrumentNum = DeviceHelpers:getActivePresetDataContent(device, 'LinkedInstrument') + 1
-      local targetInstrumentNum = SongHelpers:getInstrumentIndexOfTrack(track)
+      local targetInstrumentNum = getInstrNum()
       if (targetInstrumentNum) then
-        print('found autom dev at tr' .. trackNum .. ' target instr nr' .. targetInstrumentNum)
+        print('found midi control dev at tr' .. trackNum .. ' target instr nr' .. targetInstrumentNum)
         targetDevice = Song:instrument(targetInstrumentNum)
-        deviceIndex = targetInstrumentNum
-        type = 'cc'
+        deviceIndex = "i" .. targetInstrumentNum
+
+        getIndex = function(paramNum)
+          return DeviceHelpers:getActivePresetDataContent(device, 'ControllerNumber' .. paramNum - 1)
+        end
+
+        getType = function(paramNum)
+          print('type', DeviceHelpers:getActivePresetDataContent(device, 'ControllerType' .. paramNum - 1))
+          return DeviceHelpers:getActivePresetDataContent(device, 'ControllerType' .. paramNum - 1)
+        end
       end
     elseif (string.find(device.device_path, "Native/") ~= nil) then
       goto continue
@@ -179,8 +230,8 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
       targetDevice = device
     end
 
-    for x = 1, #device.parameters do
-      local parameter = device:parameter(x)
+    for paramIndex = 1, #device.parameters do
+      local parameter = device:parameter(paramIndex)
       if (parameter.is_automated) then
         local automation = patternTrack:find_automation(parameter)
 
@@ -192,15 +243,18 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
           if (automationEvents[trackNum] == nil) then
             automationEvents[trackNum] = {}
           end
-          if (automationEvents[trackNum][x] == nil) then
-            automationEvents[trackNum][x] = {}
+
+          local key = y * 256 + paramIndex
+          if (automationEvents[trackNum][key] == nil) then
+            automationEvents[trackNum][key] = {}
           end
 
-          table.insert(automationEvents[trackNum][x],
+          table.insert(automationEvents[trackNum][key],
             {
               device = targetDevice,
               deviceIndex = deviceIndex,
-              type = type,
+              paramIndex = getIndex(paramIndex),
+              type = getType(paramIndex),
               parameter = parameter,
               timestamp = (lineOffset + point.time - 1) * 256,
               value = point.value,

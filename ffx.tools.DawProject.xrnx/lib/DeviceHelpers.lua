@@ -7,8 +7,11 @@
 -- Info here: https://creativecommons.org/licenses/by-nc-sa/4.0/
 -------------------------------------------------------------------------------
 
+require("lib/Cache")
 
 DeviceHelpers = {}
+
+DeviceHelpers.cache = Cache()
 
 function DeviceHelpers:getParameterChunk(device)
   local startOffset, endOffset = string.find(device.active_preset_data, "<ParameterChunk>")
