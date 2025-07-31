@@ -28,23 +28,7 @@ function ReduxPluginHelpers:generateReduxPresetDataForInstrument(instr, deviceSa
   -- data contains data length + data
   data = Helpers:intToBinaryLE(string.len(data), 4) .. data
 
-  local vstPresetData = {
-    'VST3',                                                      -- VST3 header
-    Helpers:intToBinaryLE(1, 4),                                 -- version 1, little endian, 4 bytes
-    ReduxVST3Identifier,                                         -- Plugin ID, 32 bytes length
-    Helpers:intToBinaryLE(string.len(data) + 4 + 4 + 32 + 8, 8), -- Offset to list chunk, 8 bytes length, little endian
-    data,                                                        -- chunk data
-    'List',                                                      -- List chunk start
-    Helpers:intToBinaryLE(2, 4),                                 -- entry count, little endian, 4 bytes
-    'Comp',                                                      -- actual preset chunk id
-    Helpers:intToBinaryLE(4 + 4 + 32 + 8, 8),                    -- Offset to chunk data, 8 bytes length, little endian
-    Helpers:intToBinaryLE(string.len(data), 8),                  -- chunk data length, 8 bytes length, little endian
-    'Cont',                                                      -- fake end chunk id
-    Helpers:intToBinaryLE(string.len(data) + 4 + 4 + 32 + 8, 8), -- Offset to chunk data, 8 bytes length, little endian
-    Helpers:intToBinaryLE(0, 8)                                  -- chunk data length, 8 bytes length, little endian
-  }
-
-  local stringPresetData = table.concat(vstPresetData, '')
+  local stringPresetData = DeviceHelpers:convertBinaryToVst3Preset(ReduxVST3Identifier, data)
   Helpers:writeFile(deviceSavePath .. ".vstpreset", stringPresetData)
   return stringPresetData
 end

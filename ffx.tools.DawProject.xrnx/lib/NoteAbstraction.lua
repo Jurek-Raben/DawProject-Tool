@@ -220,7 +220,7 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
         end
 
         getType = function(paramNum)
-          print('type', DeviceHelpers:getActivePresetDataContent(device, 'ControllerType' .. paramNum - 1))
+          --print('type', DeviceHelpers:getActivePresetDataContent(device, 'ControllerType' .. paramNum - 1))
           return DeviceHelpers:getActivePresetDataContent(device, 'ControllerType' .. paramNum - 1)
         end
       end

@@ -20,6 +20,8 @@ require('lib/DeviceHelpers')
 require('lib/ReduxPluginHelpers')
 require('lib/Cache')
 
+
+
 --------------------------------------------------------------------------------
 -- Global helpers
 --------------------------------------------------------------------------------
@@ -53,7 +55,8 @@ DawProject.defaultConfig = {
   exportVST2 = false,
   exportVST3 = true,
   addTrackDelayToClips = true,
-  devMode = true
+  devMode = true,
+  useVST2InfoTool = true
 }
 
 DawProject.configDescription = {
@@ -62,6 +65,7 @@ DawProject.configDescription = {
   exportVST3 = { type = "boolean", txt = "Export VST3 plugins" },
   addTrackDelayToClips = { type = "boolean", txt = "Add the track delay ms to the clip position" },
   devMode = { type = "boolean", txt = "Adds some debugging menu entries / functionality" },
+  useVST2InfoTool = { type = "boolean", txt = "Hacky workaround using a binary tool for plugin id extraction" },
 }
 
 if (os.platform() == 'MACINTOSH') then
@@ -503,6 +507,9 @@ function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterId
     if (config['exportVST2'] == true and string.find(device.device_path, "VST/") ~= nil) then
       -- FIXME active_preset_data is defective
       --print('vst2', device.short_name, device.active_preset_data)
+      if (config['useVST2InfoTool'] == true) then
+        attr.deviceID = DeviceHelpers:readPluginInfo(device)['id'] or attr.deviceID
+      end
       Helpers:writeFile(TempDir .. "/plugins/" .. deviceSavePath .. ".fxp", binParameterChunkData)
       devicesObj[#devicesObj + 1] = {
         Vst2Plugin = {
