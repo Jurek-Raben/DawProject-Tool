@@ -30,7 +30,7 @@ jobs:
       - name: Vorletzte Commit-Message holen
         id: get_msg
         run: |
-          msg=$(git log -2 --pretty=format:%d%B | tail -n1)
+          msg=$(git log -2 --pretty=format:%B | tail -n1)
           echo "::set-output name=body::$msg"
 
       - name: Create Release
