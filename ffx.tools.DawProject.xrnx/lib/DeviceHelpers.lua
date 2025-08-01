@@ -33,24 +33,41 @@ function DeviceHelpers:getActivePresetDataContent(device, nodeName)
   return nil
 end
 
-function DeviceHelpers:convertBinaryToVst3Preset(pluginId, data)
+function DeviceHelpers:convertBinaryToVst2Preset(pluginInfo, data)
+  local lenData = string.len(data)
   local vstPresetData = {
-    'VST3',                                                      -- VST3 header
-    Helpers:intToBinaryLE(1, 4),                                 -- version 1, little endian, 4 bytes
-    pluginId,                                                    -- Plugin ID, 32 bytes length
-    Helpers:intToBinaryLE(string.len(data) + 4 + 4 + 32 + 8, 8), -- Offset to list chunk, 8 bytes length, little endian
-    data,                                                        -- chunk data
-    'List',                                                      -- List chunk start
-    Helpers:intToBinaryLE(2, 4),                                 -- entry count, little endian, 4 bytes
-    'Comp',                                                      -- actual preset chunk id
-    Helpers:intToBinaryLE(4 + 4 + 32 + 8, 8),                    -- Offset to chunk data, 8 bytes length, little endian
-    Helpers:intToBinaryLE(string.len(data), 8),                  -- chunk data length, 8 bytes length, little endian
-    'Cont',                                                      -- fake end chunk id
-    Helpers:intToBinaryLE(string.len(data) + 4 + 4 + 32 + 8, 8), -- Offset to chunk data, 8 bytes length, little endian
-    Helpers:intToBinaryLE(0, 8)                                  -- chunk data length, 8 bytes length, little endian
+    'CcnK',                                               -- VST2 root chunk identifier
+    Helpers:intToBinaryBE(lenData + 52, 4),               -- size of this chunk, excl. magic + byteSize, 4 bytes, +52
+    'FPCh',                                               -- 'FxCk' (regular) or 'FPCh' (opaque chunk)
+    Helpers:intToBinaryBE(1, 4),                          -- format version (currently 1)
+    Helpers:intToBinaryBE(pluginInfo.id, 4),              -- fx unique ID
+    Helpers:intToBinaryBE(pluginInfo.version, 4),         -- fx version
+    Helpers:intToBinaryBE(pluginInfo.countParameters, 4), -- number of parameters
+    'Default' .. Helpers:intToBinaryBE(0, 28 - 7),        -- program name (null-terminated ASCII string), 28 bytes
+    Helpers:intToBinaryBE(lenData, 4),                    -- size of program data, 4 bytes
+    data,                                                 -- chunk data
   }
 
   return table.concat(vstPresetData, '')
+end
+
+function DeviceHelpers:convertBinaryToVst3Preset(pluginId, data)
+  local lenData = string.len(data)
+  return table.concat({
+    'VST3',                                             -- VST3 header
+    Helpers:intToBinaryLE(1, 4),                        -- version 1, little endian, 4 bytes
+    pluginId,                                           -- Plugin ID, 32 bytes length
+    Helpers:intToBinaryLE(lenData + 4 + 4 + 32 + 8, 8), -- Offset to list chunk, 8 bytes length, little endian
+    data,                                               -- chunk data
+    'List',                                             -- List chunk start
+    Helpers:intToBinaryLE(2, 4),                        -- entry count, little endian, 4 bytes
+    'Comp',                                             -- actual preset chunk id
+    Helpers:intToBinaryLE(4 + 4 + 32 + 8, 8),           -- Offset to chunk data, 8 bytes length, little endian
+    Helpers:intToBinaryLE(lenData, 8),                  -- chunk data length, 8 bytes length, little endian
+    'Cont',                                             -- fake end chunk id
+    Helpers:intToBinaryLE(lenData + 4 + 4 + 32 + 8, 8), -- Offset to chunk data, 8 bytes length, little endian
+    Helpers:intToBinaryLE(0, 8)                         -- chunk data length, 8 bytes length, little endian
+  }, '')
 end
 
 function DeviceHelpers:readPluginInfo(device)
@@ -67,6 +84,11 @@ function DeviceHelpers:readPluginInfo(device)
 
   if (pluginInfo) then
     return pluginInfo
+  end
+
+  if (not io.exists(vst2ToolPath)) then
+    print("error: vst2 info tool does not exist under", vst2ToolPath)
+    return nil
   end
 
   local _, pluginId = pluginPath:match("(.*/)(.*)")
@@ -109,7 +131,7 @@ function DeviceHelpers:readPluginInfo(device)
   local toolOutput = Helpers:captureConsole(vst2ToolPath .. " '" .. filePath .. "'")
   local json = require('lib/json')
   pluginInfo = json.decode(toolOutput)
-  print("tool output")
+  print("tool output:")
   rprint(pluginInfo)
   self.cache:set(pluginPath, pluginInfo)
   return pluginInfo

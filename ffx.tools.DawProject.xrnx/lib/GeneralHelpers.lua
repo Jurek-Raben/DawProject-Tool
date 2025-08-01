@@ -106,8 +106,22 @@ function Helpers:hexToCharLittleEndian(hexString)
   return binaryString
 end
 
+function Helpers:hexToCharBigEndian(hexString)
+  local binaryString = ""
+  for i = 1, #hexString / 2 do
+    local hexChar = string.sub(hexString, i * 2 - 1, i * 2)
+    local binaryChar = string.char(tonumber(hexChar, 16))
+    binaryString = binaryString .. binaryChar
+  end
+  return binaryString
+end
+
 function Helpers:intToBinaryLE(intValue, numBytes)
   return Helpers:hexToCharLittleEndian(string.format("%0" .. (numBytes * 2) .. "x", intValue))
+end
+
+function Helpers:intToBinaryBE(intValue, numBytes)
+  return Helpers:hexToCharBigEndian(string.format("%0" .. (numBytes * 2) .. "x", intValue))
 end
 
 function Helpers:prepareFilenameForXML(string)

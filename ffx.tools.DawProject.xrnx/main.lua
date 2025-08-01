@@ -245,7 +245,9 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
         end
 
         if (parametersObj[parameterIdPrefix][index] == nil) then
-          print('param', automationEvent.parameter.name, automationEvent.type, automationEvent.value, parameterIdPrefix,
+          print('linked param for instr ' .. automationEvent.device.name, automationEvent.parameter.name,
+            automationEvent.type, automationEvent.value,
+            parameterIdPrefix,
             index)
           parametersObj[parameterIdPrefix][index] = {
             _attr = {
@@ -508,7 +510,11 @@ function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterId
       -- FIXME active_preset_data is defective
       --print('vst2', device.short_name, device.active_preset_data)
       if (config['useVST2InfoTool'] == true) then
-        attr.deviceID = DeviceHelpers:readPluginInfo(device)['id'] or attr.deviceID
+        local pluginInfo = DeviceHelpers:readPluginInfo(device)
+        if (pluginInfo) then
+          attr.deviceID = pluginInfo['id'] or attr.deviceID
+          binParameterChunkData = DeviceHelpers:convertBinaryToVst2Preset(pluginInfo, binParameterChunkData)
+        end
       end
       Helpers:writeFile(TempDir .. "/plugins/" .. deviceSavePath .. ".fxp", binParameterChunkData)
       devicesObj[#devicesObj + 1] = {
