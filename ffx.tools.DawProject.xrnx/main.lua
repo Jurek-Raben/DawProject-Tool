@@ -513,6 +513,8 @@ function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterId
         local pluginInfo = DeviceHelpers:readPluginInfo(device)
         if (pluginInfo) then
           attr.deviceID = pluginInfo['id'] or attr.deviceID
+          attr.deviceName = pluginInfo['name'] or attr.deviceName
+          attr.deviceVendor = pluginInfo['vendor']
           local presetName = device:preset(device.active_preset)
           binParameterChunkData = DeviceHelpers:convertBinaryToVst2Preset(pluginInfo, presetName, binParameterChunkData)
         end
