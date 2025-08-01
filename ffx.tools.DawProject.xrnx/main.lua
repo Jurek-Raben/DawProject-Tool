@@ -517,25 +517,30 @@ function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterId
           attr.deviceVendor = pluginInfo['vendor']
           local presetName = device:preset(device.active_preset)
           binParameterChunkData = DeviceHelpers:convertBinaryToVst2Preset(pluginInfo, presetName, binParameterChunkData)
+        else
+          -- for now skip vst2 plugins with wrong id
+          attr.deviceID = nil
         end
       end
       Helpers:writeFile(TempDir .. "/plugins/" .. deviceSavePath .. ".fxp", binParameterChunkData)
-      devicesObj[#devicesObj + 1] = {
-        Vst2Plugin = {
-          _attr = attr,
-          Enabled = {
-            _attr = enabledAttr
-          },
-          State = {
-            _attr = {
-              path = "plugins/" .. deviceSavePath .. ".fxp",
-              external = "false"
-            }
-          },
-          Parameters = automatedParametersObj
+      if (attr.deviceID ~= nil) then
+        devicesObj[#devicesObj + 1] = {
+          Vst2Plugin = {
+            _attr = attr,
+            Enabled = {
+              _attr = enabledAttr
+            },
+            State = {
+              _attr = {
+                path = "plugins/" .. deviceSavePath .. ".fxp",
+                external = "false"
+              }
+            },
+            Parameters = automatedParametersObj
+          }
         }
-      }
-      devicesObj[#devicesObj].Vst2Plugin._attr.id = 'plugin' .. trackIndex .. '-' .. #devicesObj
+        devicesObj[#devicesObj].Vst2Plugin._attr.id = 'plugin' .. trackIndex .. '-' .. #devicesObj
+      end
     end
 
     -- AudioUnit
