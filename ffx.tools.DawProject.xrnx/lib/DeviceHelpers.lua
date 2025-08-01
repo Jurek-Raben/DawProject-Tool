@@ -33,19 +33,20 @@ function DeviceHelpers:getActivePresetDataContent(device, nodeName)
   return nil
 end
 
-function DeviceHelpers:convertBinaryToVst2Preset(pluginInfo, data)
+function DeviceHelpers:convertBinaryToVst2Preset(pluginInfo, presetName, data)
   local lenData = string.len(data)
+  presetName = string.sub(presetName, 1, 27)
   local vstPresetData = {
-    'CcnK',                                               -- VST2 root chunk identifier
-    Helpers:intToBinaryBE(lenData + 52, 4),               -- size of this chunk, excl. magic + byteSize, 4 bytes, +52
-    'FPCh',                                               -- 'FxCk' (regular) or 'FPCh' (opaque chunk)
-    Helpers:intToBinaryBE(1, 4),                          -- format version (currently 1)
-    Helpers:intToBinaryBE(pluginInfo.id, 4),              -- fx unique ID
-    Helpers:intToBinaryBE(pluginInfo.version, 4),         -- fx version
-    Helpers:intToBinaryBE(pluginInfo.countParameters, 4), -- number of parameters
-    'Default' .. Helpers:intToBinaryBE(0, 28 - 7),        -- program name (null-terminated ASCII string), 28 bytes
-    Helpers:intToBinaryBE(lenData, 4),                    -- size of program data, 4 bytes
-    data,                                                 -- chunk data
+    'CcnK',                                                              -- VST2 root chunk identifier
+    Helpers:intToBinaryBE(lenData + 52, 4),                              -- size of this chunk, excl. magic + byteSize, 4 bytes, +52
+    'FPCh',                                                              -- 'FxCk' (regular) or 'FPCh' (opaque chunk)
+    Helpers:intToBinaryBE(1, 4),                                         -- format version (currently 1)
+    Helpers:intToBinaryBE(pluginInfo.id, 4),                             -- fx unique ID
+    Helpers:intToBinaryBE(pluginInfo.version, 4),                        -- fx version
+    Helpers:intToBinaryBE(pluginInfo.countParameters, 4),                -- number of parameters
+    presetName .. Helpers:intToBinaryBE(0, 28 - string.len(presetName)), -- program name (null-terminated ASCII string), 28 bytes
+    Helpers:intToBinaryBE(lenData, 4),                                   -- size of program data, 4 bytes
+    data,                                                                -- chunk data
   }
 
   return table.concat(vstPresetData, '')

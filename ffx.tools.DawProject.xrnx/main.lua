@@ -513,7 +513,8 @@ function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterId
         local pluginInfo = DeviceHelpers:readPluginInfo(device)
         if (pluginInfo) then
           attr.deviceID = pluginInfo['id'] or attr.deviceID
-          binParameterChunkData = DeviceHelpers:convertBinaryToVst2Preset(pluginInfo, binParameterChunkData)
+          local presetName = device:preset(device.active_preset)
+          binParameterChunkData = DeviceHelpers:convertBinaryToVst2Preset(pluginInfo, presetName, binParameterChunkData)
         end
       end
       Helpers:writeFile(TempDir .. "/plugins/" .. deviceSavePath .. ".fxp", binParameterChunkData)
