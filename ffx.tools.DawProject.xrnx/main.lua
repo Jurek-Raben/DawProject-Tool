@@ -3,7 +3,7 @@ end
 --------------------------------------------------------------------------------
 -- Daw Project
 -- by Jurek Raben
--- v0.1.2
+-- v0.1.3
 --
 -- Licensed under CC Attribution-NonCommercial-ShareAlike 4.0 International
 -- Info here: https://creativecommons.org/licenses/by-nc-sa/4.0/

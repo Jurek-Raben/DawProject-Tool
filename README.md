@@ -18,6 +18,7 @@ Sadly I had to halt the development of this tool, due to API limitations, which 
 
 - Track automation mapping, this only works so far, if the VST3 uses index as parameterID, e.g. Redux VST3. But most plugins won't work, because they use unique parameter ids instead. The tool currently exports the index value.
 - VST3 preset export, read below
+- VST2 preset export using the VST2 info tool included (a workaround)
 
 #### What’s missing / not implemented yet
 
@@ -43,7 +44,11 @@ A song has to fulfill the following requirements for a working export:
 - Only one instrument per track! Use [Fladd's track splitter tool](https://www.renoise.com/tools/split-into-separate-tracks)!
 - The Instr. Automation Device has to be placed onto the track where the target instrument is playing
 
-#### Workarounds
+#### Automatic workarounds
+
+The tool can use a vst2info tool to extract the missing plugin infos, which I coded in Rust. There are pre-built binaries included in the `/bin` sub directory, pre-built for macOS (arm/intel ub2), windows x86_64, linux x86_64.
+
+#### Manual workarounds
 
 - You can enable VST2 export, and then manually export each preset, overwrite the generated file(s) in the /tmp directory. And then use the "Repack .dawproject" menu entry.
 - Same for AudioUnit, but here you would also have to figure out the parameter ids and fix it in the project.xml (Search for "AuPlugin" and then the "Parameters" node, in here the parameterID attributes)
@@ -63,7 +68,9 @@ The tools require Rust / cargo to be installed on the system.
 
 ## Feel free to contribute
 
-Feel free to improve, try yourself, get in touch, and discuss it. Also feel free to contact me, if you have questions or ideas.
+Feel free to improve, try yourself, get in touch, and discuss it. Contact me, if you have questions or ideas.
+
+I have tested this tool so far for macOS. However, it should theoretically also work for Windows and maybe even Linux. Please report back.
 
 I've also tried to make the source code nicely readable. You know, this is important for team work, like proper function-, variable- and parameter-naming. The goal should be that a new developer can understand what's going on on-the-fly. What is the method or object actually doing?
 
