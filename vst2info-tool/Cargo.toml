@@ -9,3 +9,4 @@ repository = "https://github.com/Jurek-Raben/DawProject-Tool"
 vst2 = "0.0.1"
 base64 = "0.22.1"
 json = "0.12.4"
+

@@ -3,17 +3,31 @@ mkdir ./ffx.tools.DawProject.xrnx/bin
 
 # build vst2info-tool
 cd vst2info-tool
-cargo b -r
+
 if [[ "$OSTYPE" == "darwin"* ]]; then
-cp ./target/release/vst2info-tool ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-mac-$(uname -m)
+cargo b -r  --target=x86_64-apple-darwin --target=aarch64-apple-darwin
+lipo -create \
+  -output target/vst2info-tool \
+  target/x86_64-apple-darwin/release/vst2info-tool \
+  target/aarch64-apple-darwin/release/vst2info-tool
+cp ./target/vst2info-tool ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-mac
+
+cargo b -r  --target=x86_64-pc-windows-gnu
+cp ./target/x86_64-pc-windows-gnu/release/vst2info-tool.exe ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-win.exe
+
+CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-unknown-linux-gnu-gcc \
+cargo b -r --target=x86_64-unknown-linux-gnu
+cp ./target/x86_64-unknown-linux-gnu/release/vst2info-tool ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-linux
 fi
 
 if [[ "$OSTYPE" == "win32"* ]]; then
-cp ./target/release/vst2info-tool ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-win-$(uname -m).exe
+cargo b -r
+cp ./target/release/vst2info-tool ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-win.exe
 fi
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-cp ./target/release/vst2info-tool ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-linux-$(uname -m)
+cargo b -r
+cp ./target/release/vst2info-tool ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-linux
 fi
 
 cd ..
