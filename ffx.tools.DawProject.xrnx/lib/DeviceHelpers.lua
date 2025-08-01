@@ -58,6 +58,12 @@ function DeviceHelpers:readPluginInfo(device)
   local pluginInfo = self.cache:get(pluginPath)
   local filePath = nil
   local dbPath = renoise.tool().bundle_path:match("(.*Renoise/V" .. renoise.RENOISE_VERSION .. "/)")
+  local vst2ToolPath = "./bin/vst2info-tool-" .. Helpers:getShortOSString() .. "-" .. jit.arch
+
+  if (Helpers:getShortOSString() == "win") then
+    vst2ToolPath = vst2ToolPath .. ".exe"
+  end
+
 
   if (pluginInfo) then
     return pluginInfo
@@ -99,8 +105,8 @@ function DeviceHelpers:readPluginInfo(device)
     return nil
   end
 
-  print("executing", "./bin/vst2info-tool '" .. filePath .. "'")
-  local toolOutput = Helpers:captureConsole("./bin/vst2info-tool '" .. filePath .. "'")
+  print("executing", vst2ToolPath .. " '" .. filePath .. "'")
+  local toolOutput = Helpers:captureConsole(vst2ToolPath .. " '" .. filePath .. "'")
   local json = require('lib/json')
   pluginInfo = json.decode(toolOutput)
   print("tool output")

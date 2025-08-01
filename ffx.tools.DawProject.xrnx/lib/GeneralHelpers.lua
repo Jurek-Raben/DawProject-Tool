@@ -144,3 +144,14 @@ function Helpers:captureConsole(cmd, raw)
 
   return output
 end
+
+function Helpers:getShortOSString()
+  if (os.platform() == 'MACINTOSH') then
+    return 'mac'
+  elseif (os.platform() == 'WINDOWS') then
+    return 'win'
+  elseif (os.platform() == 'LINUX') then
+    return 'linux'
+  end
+  return nil
+end
