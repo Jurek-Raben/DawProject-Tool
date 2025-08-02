@@ -77,7 +77,7 @@ function DeviceHelpers:readPluginInfo(device)
   local filePath = nil
   local isBridged = nil
   local dbPath = renoise.tool().bundle_path:match("(.*Renoise/V" .. renoise.RENOISE_VERSION .. "/)")
-  local vst2ToolPath = "./bin/vst2info-tool-" .. Helpers:getShortOSString()
+  local vst2ToolPath = "vst2info-tool-" .. Helpers:getShortOSString()
 
   if (Helpers:getShortOSString() == "win") then
     vst2ToolPath = vst2ToolPath .. ".exe"
@@ -144,13 +144,13 @@ function DeviceHelpers:readPluginInfo(device)
     return nil
   end
 
-  if (not io.exists(vst2ToolPath)) then
-    print("error: vst2 info tool does not exist under", vst2ToolPath)
+  if (not io.exists('./bin/' .. vst2ToolPath)) then
+    print("error: vst2 info tool does not exist under", './bin/' .. vst2ToolPath)
     return nil
   end
 
-
   print("executing", vst2ToolPath .. " '" .. filePath .. "'")
+  vst2ToolPath = "cd ./bin;./" .. vst2ToolPath
   local toolOutput = Helpers:captureConsole(vst2ToolPath .. " '" .. filePath .. "'")
   local json = require('lib/json')
   pcall(function()
