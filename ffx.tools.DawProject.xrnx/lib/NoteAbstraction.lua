@@ -26,7 +26,7 @@ class "NoteAbstraction"
 function NoteAbstraction:__init()
 end
 
-function NoteAbstraction:generateSongEvents()
+function NoteAbstraction:generateSongEvents(yieldCallback)
   local noteEvents = {}
   local automationEvents = {}
 
@@ -70,6 +70,7 @@ function NoteAbstraction:generateSongEvents()
 
         NoteAbstraction:addTrackAutomation(automationEvents, position.track,
           pattern:track(position.track), lineOffset)
+        if (yieldCallback ~= nil and seqIndex % 4 == 0) then yieldCallback() end
       end
 
       if noteColumn.is_empty then

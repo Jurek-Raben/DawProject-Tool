@@ -6,11 +6,13 @@ cd vst2info-tool
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
 cargo b -r  --target=x86_64-apple-darwin --target=aarch64-apple-darwin
-lipo -create \
-  -output target/vst2info-tool \
-  target/x86_64-apple-darwin/release/vst2info-tool \
-  target/aarch64-apple-darwin/release/vst2info-tool
-cp ./target/vst2info-tool ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-mac
+#lipo -create \
+#  -output target/vst2info-tool \
+#  target/x86_64-apple-darwin/release/vst2info-tool \
+#  target/aarch64-apple-darwin/release/vst2info-tool
+#cp ./target/vst2info-tool ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-mac
+cp ./target/x86_64-apple-darwin/release/vst2info-tool ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-mac-x64
+cp ./target/aarch64-apple-darwin/release/vst2info-tool ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-mac-arm
 
 cargo b -r  --target=x86_64-pc-windows-gnu
 cp ./target/x86_64-pc-windows-gnu/release/vst2info-tool.exe ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-win.exe

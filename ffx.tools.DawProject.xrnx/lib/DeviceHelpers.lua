@@ -75,6 +75,7 @@ function DeviceHelpers:readPluginInfo(device)
   local pluginPath = device.device_path
   local pluginInfo = self.cache:get(pluginPath)
   local filePath = nil
+  local isBridged = nil
   local dbPath = renoise.tool().bundle_path:match("(.*Renoise/V" .. renoise.RENOISE_VERSION .. "/)")
   local vst2ToolPath = "./bin/vst2info-tool-" .. Helpers:getShortOSString()
 
@@ -87,21 +88,21 @@ function DeviceHelpers:readPluginInfo(device)
     return pluginInfo
   end
 
-  if (not io.exists(vst2ToolPath)) then
-    print("error: vst2 info tool does not exist under", vst2ToolPath)
-    return nil
-  end
-
   local _, pluginId = pluginPath:match("(.*/)(.*)")
+
+  local dbPathAddon = jit.arch
+  if (jit.arch == 'x86_64' or jit.arch == 'amd64') then
+    dbPathAddon = 'x64'
+  end
 
   -- vst2
   if (string.find(pluginPath, "VST/")) then
-    dbPath = dbPath .. "CachedVSTs_" .. jit.arch .. ".db"
+    dbPath = dbPath .. "CachedVSTs_" .. dbPathAddon .. ".db"
   end
 
   -- vst3
   if (string.find(pluginPath, "VST3/")) then
-    dbPath = dbPath .. "CachedVST3s_" .. jit.arch .. ".db"
+    dbPath = dbPath .. "CachedVST3s_" .. dbPathAddon .. ".db"
   end
 
   print("opening db at", dbPath, "for", pluginId)
@@ -111,22 +112,40 @@ function DeviceHelpers:readPluginInfo(device)
     return nil
   end
 
+
   -- Files CachedVST3s_arm64/_x64 or CachedVSTs_arm64/_x64
   -- Table "CachedPlugins", column "DocumentIdentifier"
-  local sql = "SELECT LocalFilePath FROM CachedPlugins WHERE DocumentIdentifier = '" .. pluginId .. "';"
+  local sql = "SELECT LocalFilePath, IsBridged FROM CachedPlugins WHERE DocumentIdentifier = '" .. pluginId .. "';"
+
+  local result = {}
   for a in db:rows(sql) do
     for _, v in ipairs(a) do
-      filePath = v
-      break
+      table.insert(result, v)
     end
-    break
   end
 
   db:close()
 
-  if (filePath == nil) then
+  if (result[1] == nil) then
     return nil
   end
+
+  isBridged = result[2]
+  filePath = result[1]
+
+  if (jit.arch == "arm64" and isBridged == 1 or (jit.arch == "x86_64" or jit.arch == "amd64") and isBridged == 0) then
+    vst2ToolPath = vst2ToolPath .. '-x64'
+  elseif (jit.arch == "arm64" and isBridged == 0) then
+    vst2ToolPath = vst2ToolPath .. '-arm'
+  elseif ((jit.arch == "x86_64" or jit.arch == "amd64") and isBridged == 1) then
+    return nil
+  end
+
+  if (not io.exists(vst2ToolPath)) then
+    print("error: vst2 info tool does not exist under", vst2ToolPath)
+    return nil
+  end
+
 
   print("executing", vst2ToolPath .. " '" .. filePath .. "'")
   local toolOutput = Helpers:captureConsole(vst2ToolPath .. " '" .. filePath .. "'")

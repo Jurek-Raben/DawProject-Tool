@@ -39,6 +39,7 @@ class "DawProject"
 
 DawProject.configurator = nil
 DawProject.automatedParametersCache = Cache()
+DawProject.instrIndexCache = Cache()
 local config = {}
 
 TempDir = './tmp'
@@ -211,16 +212,14 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
   local scaleFactor = SCALE_FACTOR / Song.transport.lpb
 
   for trackNum, trackAutomationEvents in pairs(automationEvents) do
-    coroutine.yield()
-    fancyStatus:show_status('Exporting automation data to .dawproject' .. Helpers:generateStatusAnimation())
-
-
     for index, deviceAutomationEvents in pairs(trackAutomationEvents) do
       for _, automationEvent in pairs(deviceAutomationEvents) do
         local parameterIdPrefix = 'paramid-' .. trackNum .. '-' .. automationEvent.deviceIndex
 
         if (automationsObj[trackNum] == nil) then
           automationsObj[trackNum] = {}
+          coroutine.yield()
+          fancyStatus:show_status('Exporting automation data to .dawproject' .. Helpers:generateStatusAnimation())
         end
         if (automationsObj[trackNum][index] == nil) then
           automationsObj[trackNum][index] = {
@@ -242,6 +241,8 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
 
         if (parametersObj[parameterIdPrefix] == nil) then
           parametersObj[parameterIdPrefix] = {}
+          coroutine.yield()
+          fancyStatus:show_status('Exporting automation data to .dawproject' .. Helpers:generateStatusAnimation())
         end
 
         if (parametersObj[parameterIdPrefix][index] == nil) then
@@ -283,30 +284,31 @@ function DawProject:addTrackToStructure(track, targetObj)
     comment = comment .. "Delay: " .. track.output_delay
   end
 
+  local trackIndex = SongHelpers:getTrackIndex(track)
 
   local _trackObj = {
     _attr = {
-      id = 'track' .. SongHelpers:getTrackIndex(track),
+      id = 'track' .. trackIndex,
       name = Helpers:prepareNameForXML(track.name),
       color = '#' .. Helpers:rgbToHex(track.color[1], track.color[2], track.color[3]),
       comment = comment
     },
     Channel = {
       _attr = {
-        id = 'channel' .. SongHelpers:getTrackIndex(track),
+        id = 'channel' .. trackIndex,
         name = Helpers:prepareNameForXML(track.name),
         audioChannels = '2',
         solo = track.solo_state and 'true' or 'false'
       },
       Mute = {
         _attr = {
-          id = 'mute' .. SongHelpers:getTrackIndex(track),
+          id = 'mute' .. trackIndex,
           value = track.mute_state == renoise.Track.MUTE_STATE_ACTIVE and 'false' or 'true',
         }
       },
       Pan = {
         _attr = {
-          id = 'pan' .. SongHelpers:getTrackIndex(track),
+          id = 'pan' .. trackIndex,
           value = track.postfx_panning.value,
           unit = "normalized",
           min = '0',
@@ -315,7 +317,7 @@ function DawProject:addTrackToStructure(track, targetObj)
       },
       Volume = {
         _attr = {
-          id = 'vol' .. SongHelpers:getTrackIndex(track),
+          id = 'vol' .. trackIndex,
           min = '0',
           max = '2',
           unit = "linear",
@@ -391,7 +393,9 @@ function DawProject:generateDevicesForXML(track)
   local instr
   local devicesObj = {}
   local trackIndex = SongHelpers:getTrackIndex(track)
-  local instrIndex = SongHelpers:getInstrumentIndexOfTrack(track)
+  local instrIndex = DawProject.instrIndexCache:get(trackIndex) or SongHelpers:getInstrumentIndexOfTrack(track)
+  DawProject.instrIndexCache:set(trackIndex, instrIndex)
+
   if (instrIndex) then
     instr = Song:instrument(instrIndex)
   end
@@ -441,6 +445,7 @@ function DawProject:generateDevicesForXML(track)
   end
 
   coroutine.yield()
+  fancyStatus:show_status('Exporting track structure to .dawproject' .. Helpers:generateStatusAnimation())
 
   local numDevices = #track.devices
   for deviceIndex = 2, numDevices do
@@ -464,6 +469,9 @@ function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterId
 
   if (parameterChunkData ~= nil and deviceId ~= nil) then
     local binParameterChunkData = Helpers:base64ToString(parameterChunkData)
+    coroutine.yield()
+    fancyStatus:show_status('Exporting track structure to .dawproject' .. Helpers:generateStatusAnimation())
+
     local attr = {
       deviceID = deviceId,
       deviceRole = deviceRole,
@@ -511,6 +519,9 @@ function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterId
       --print('vst2', device.short_name, device.active_preset_data)
       if (config['useVST2InfoTool'] == true) then
         local pluginInfo = DeviceHelpers:readPluginInfo(device)
+        coroutine.yield()
+        fancyStatus:show_status('Exporting track structure to .dawproject' .. Helpers:generateStatusAnimation())
+
         if (pluginInfo) then
           attr.deviceID = pluginInfo['id'] or attr.deviceID
           attr.deviceName = pluginInfo['name'] or attr.deviceName
@@ -564,6 +575,8 @@ function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterId
       }
       devicesObj[#devicesObj].AuPlugin._attr.id = 'plugin' .. trackIndex .. '-' .. #devicesObj
     end
+    coroutine.yield()
+    fancyStatus:show_status('Exporting track structure to .dawproject' .. Helpers:generateStatusAnimation())
   end
 end
 
@@ -628,11 +641,19 @@ function DawProject:export()
     function()
       local xml2lua = require("lib/xml2lua/xml2lua")
 
+      local yieldCallback = function()
+        coroutine.yield()
+        fancyStatus:show_status('Exporting note data to .dawproject' .. Helpers:generateStatusAnimation())
+      end
+
+      yieldCallback()
       noteAbstraction = NoteAbstraction()
-      local songEvents = noteAbstraction:generateSongEvents()
+      local songEvents = noteAbstraction:generateSongEvents(yieldCallback)
 
       local automationEvents = DawProject:generateAutomationEventsDataForXML(songEvents)
       self.automatedParametersCache:set('parameters', automationEvents.parametersObj)
+
+      yieldCallback()
 
       local projectStructure = {
         Project = {
