@@ -43,6 +43,7 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
   local patternLines = nil
   local pattern = nil
   local seqIsMuted = {}
+  local usedTypes = {}
   local lineOffset = 0
 
   for seqIndex = 1, #Song.sequencer.pattern_sequence do
@@ -74,7 +75,7 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
           checkForNoteEvent(noteKey)
         end
 
-        NoteAbstraction:addTrackAutomation(automationEvents, position.track,
+        usedTypes = NoteAbstraction:addTrackAutomation(automationEvents, position.track,
           pattern:track(position.track), lineOffset)
         if (yieldCallback ~= nil and seqIndex % 4 == 0) then yieldCallback() end
       end
@@ -153,6 +154,7 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
 end
 
 function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternTrack, lineOffset)
+  local usedTypes = {}
   local track = Song:track(trackNum)
 
   for y = 2, #track.devices do
@@ -246,20 +248,32 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
           goto continue2
         end
 
-        for _, point in ipairs(automation.points) do
-          table.insert(automationEvents,
-            {
-              device = targetDevice,
-              deviceIndex = deviceIndexString,
-              trackNum = trackNum,
-              paramIndex = getIndex(paramIndex),
-              type = getType(paramIndex),
-              parameter = parameter,
-              timestamp = (lineOffset + point.time - 1) * 256,
-              value = point.value,
-              scaling = point.scaling
-            }
-          )
+        local _type = getType(paramIndex)
+        local _paramIndex = getIndex(paramIndex)
+
+        if (_type ~= nil) then
+          for _, point in ipairs(automation.points) do
+            table.insert(automationEvents,
+              {
+                device = targetDevice,
+                deviceIndex = deviceIndexString,
+                trackNum = trackNum,
+                paramIndex = _paramIndex,
+                type = _type,
+                parameter = parameter,
+                timestamp = (lineOffset + point.time - 1) * 256,
+                value = point.value,
+                scaling = point.scaling
+              }
+            )
+
+            if (usedTypes[_type] == nil) then
+              usedTypes[_type] = {}
+            end
+            if (not Helpers:tableContains(usedTypes[_type], _paramIndex)) then
+              table.insert(usedTypes[_type], _paramIndex)
+            end
+          end
         end
 
         ::continue2::
@@ -268,4 +282,5 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
 
     ::continue::
   end
+  return usedTypes
 end
