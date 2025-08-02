@@ -393,8 +393,8 @@ function DawProject:generateDevicesForXML(track)
   local instr
   local devicesObj = {}
   local trackIndex = SongHelpers:getTrackIndex(track)
-  local instrIndex = DawProject.instrIndexCache:get(trackIndex) or SongHelpers:getInstrumentIndexOfTrack(track)
-  DawProject.instrIndexCache:set(trackIndex, instrIndex)
+  local instrIndex = self.instrIndexCache:get(trackIndex) or SongHelpers:getInstrumentIndexOfTrack(track)
+  self.instrIndexCache:set(trackIndex, instrIndex)
 
   if (instrIndex) then
     instr = Song:instrument(instrIndex)

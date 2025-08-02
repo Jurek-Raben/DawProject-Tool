@@ -108,10 +108,13 @@ function DeviceHelpers:readPluginInfo(device)
   print("opening db at", dbPath, "for", pluginId)
 
   local db, status, error = renoise.SQLite.open(dbPath, "ro")
-  if (db == nil or error ~= nil) then
+  if (db == nil) then
     return nil
   end
-
+  if (error ~= nil) then
+    db:close()
+    return nil
+  end
 
   -- Files CachedVST3s_arm64/_x64 or CachedVSTs_arm64/_x64
   -- Table "CachedPlugins", column "DocumentIdentifier"
