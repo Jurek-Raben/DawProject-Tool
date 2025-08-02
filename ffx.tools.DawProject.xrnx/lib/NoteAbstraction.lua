@@ -11,7 +11,7 @@
     - normalized per-note-data like “velocity”, "pan", etc.
     - Elimates pattern abstraction, linear output
 
-    Also generates related automation events in a multi dimensional array
+    Also generates related automation events in a flat table
 
     by Jurek Raben
 
@@ -21,9 +21,15 @@
 --]]
 
 
+require('lib/Cache')
+
+
 class "NoteAbstraction"
 
+NoteAbstraction.automationCache = Cache()
+
 function NoteAbstraction:__init()
+  self.automationCache = Cache()
 end
 
 function NoteAbstraction:generateSongEvents(yieldCallback)
@@ -130,9 +136,8 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
     return a.trackNum < b.trackNum
   end)
 
-
-  for i, trackAutomationEvents in ipairs(automationEvents) do
-    table.sort(trackAutomationEvents, function(a, b)
+  table.sort(automationEvents, function(a, b)
+    if (a.trackNum == b.trackNum) then
       if (a.deviceIndex == b.deviceIndex) then
         if (a.paramIndex == b.paramIndex) then
           return a.timestamp < b.timestamp
@@ -140,24 +145,20 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
         return a.paramIndex < b.paramIndex
       end
       return a.deviceIndex < b.deviceIndex
-    end)
-  end
-
+    end
+    return a.trackNum < b.trackNum
+  end)
 
   return { noteEvents = noteEvents, automationEvents = automationEvents }
 end
 
--- currently generates a multi-dimensional array, might not be required at all,
--- and instead a linear event list, which then is properly sorted, would work better
 function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternTrack, lineOffset)
   local track = Song:track(trackNum)
-
-  local automationCache = Cache()
 
   for y = 2, #track.devices do
     local device = track:device(y)
     local targetDevice
-    local deviceIndex = tostring(y)
+    local deviceIndexString = tostring(y)
 
     local getIndex = function(paramNum)
       return paramNum - 1
@@ -168,12 +169,12 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
 
     local getInstrNum = function()
       local instrCacheKey = 'instrnum_' .. trackNum
-      local targetInstrumentNum = automationCache:get(instrCacheKey)
+      local targetInstrumentNum = self.automationCache:get(instrCacheKey)
       if (targetInstrumentNum == nil) then
         targetInstrumentNum = SongHelpers:getInstrumentIndexOfTrack(track)
       end
       if (targetInstrumentNum) then
-        automationCache:set(instrCacheKey, targetInstrumentNum)
+        self.automationCache:set(instrCacheKey, targetInstrumentNum)
         return targetInstrumentNum
       end
 
@@ -186,12 +187,12 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
       if (targetInstrumentNum) then
         print('found instr autom dev at tr' .. trackNum .. ' target instr nr' .. targetInstrumentNum)
         targetDevice = Song:instrument(targetInstrumentNum)
-        deviceIndex = "i" .. targetInstrumentNum
+        deviceIndexString = "i" .. targetInstrumentNum
 
         getIndex = function(paramNum)
-          local cacheKey = tostring(y) .. '_' .. paramNum
-          if (automationCache:get(cacheKey)) then
-            return automationCache:get(cacheKey)
+          local cacheKey = trackNum .. y .. '_' .. paramNum
+          if (self.automationCache:get(cacheKey)) then
+            return self.automationCache:get(cacheKey)
           end
 
           local paramName = device:parameter(paramNum).name
@@ -202,10 +203,11 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
           for c = 1, #_targetDevice.parameters do
             if (_targetDevice:parameter(c).name == paramName) then
               print('found param name ', paramName, ' at ', c)
-              automationCache:set(cacheKey, c - 1)
+              self.automationCache:set(cacheKey, c - 1)
               return c - 1
             end
           end
+          print('error: instrument index not found', targetDevice.name)
           return nil
         end
       end
@@ -215,10 +217,10 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
       if (targetInstrumentNum) then
         print('found midi control dev at tr' .. trackNum .. ' target instr nr' .. targetInstrumentNum)
         targetDevice = Song:instrument(targetInstrumentNum)
-        deviceIndex = "i" .. targetInstrumentNum
+        deviceIndexString = "i" .. targetInstrumentNum
 
         getIndex = function(paramNum)
-          return DeviceHelpers:getActivePresetDataContent(device, 'ControllerNumber' .. paramNum - 1)
+          return tonumber(DeviceHelpers:getActivePresetDataContent(device, 'ControllerNumber' .. paramNum - 1))
         end
 
         getType = function(paramNum)
@@ -242,14 +244,11 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
         end
 
         for _, point in ipairs(automation.points) do
-          if (automationEvents[trackNum] == nil) then
-            automationEvents[trackNum] = {}
-          end
-
-          table.insert(automationEvents[trackNum],
+          table.insert(automationEvents,
             {
               device = targetDevice,
-              deviceIndex = deviceIndex,
+              deviceIndex = deviceIndexString,
+              trackNum = trackNum,
               paramIndex = getIndex(paramIndex),
               type = getType(paramIndex),
               parameter = parameter,
