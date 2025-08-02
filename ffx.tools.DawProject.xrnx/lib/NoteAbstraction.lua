@@ -132,14 +132,15 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
 
 
   for i, trackAutomationEvents in ipairs(automationEvents) do
-    for _, parameterAutomationEvents in ipairs(trackAutomationEvents) do
-      table.sort(parameterAutomationEvents, function(a, b)
-        if (a.index == b.index) then
+    table.sort(trackAutomationEvents, function(a, b)
+      if (a.deviceIndex == b.deviceIndex) then
+        if (a.paramIndex == b.paramIndex) then
           return a.timestamp < b.timestamp
         end
-        return a.index < b.index
-      end)
-    end
+        return a.paramIndex < b.paramIndex
+      end
+      return a.deviceIndex < b.deviceIndex
+    end)
   end
 
 
@@ -246,12 +247,13 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
           end
 
           local key = y * 256 + paramIndex
-          if (automationEvents[trackNum][key] == nil) then
-            automationEvents[trackNum][key] = {}
-          end
+          --if (automationEvents[trackNum][key] == nil) then
+          --  automationEvents[trackNum][key] = {}
+          --end
 
-          table.insert(automationEvents[trackNum][key],
+          table.insert(automationEvents[trackNum],
             {
+              key = key,
               device = targetDevice,
               deviceIndex = deviceIndex,
               paramIndex = getIndex(paramIndex),

@@ -212,66 +212,66 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
   local scaleFactor = SCALE_FACTOR / Song.transport.lpb
 
   for trackNum, trackAutomationEvents in pairs(automationEvents) do
-    for index, deviceAutomationEvents in pairs(trackAutomationEvents) do
-      for _, automationEvent in pairs(deviceAutomationEvents) do
-        local parameterIdPrefix = 'paramid-' .. trackNum .. '-' .. automationEvent.deviceIndex
+    for _, automationEvent in pairs(trackAutomationEvents) do
+      local parameterIdPrefix = 'paramid-' .. trackNum .. '-' .. automationEvent.deviceIndex
+      local index = automationEvent.paramIndex
 
-        if (automationsObj[trackNum] == nil) then
-          automationsObj[trackNum] = {}
-          coroutine.yield()
-          fancyStatus:show_status('Exporting automation data to .dawproject' .. Helpers:generateStatusAnimation())
-        end
-        if (automationsObj[trackNum][index] == nil) then
-          automationsObj[trackNum][index] = {
-            _attr = {
-              name = automationEvent.parameter.name,
-              unit = "normalized"
-            },
-            Target = {
-              _attr = {
-                parameter = parameterIdPrefix .. '-' .. index,
-                expression = DawProject:mapExpressionType(automationEvent),
-                controller = automationEvent.type == 'CC' and automationEvent.paramIndex or nil,
-                channel = "0"
-              }
-            },
-            RealPoint = {}
-          }
-        end
-
-        if (parametersObj[parameterIdPrefix] == nil) then
-          parametersObj[parameterIdPrefix] = {}
-          coroutine.yield()
-          fancyStatus:show_status('Exporting automation data to .dawproject' .. Helpers:generateStatusAnimation())
-        end
-
-        if (parametersObj[parameterIdPrefix][index] == nil) then
-          print('linked param for instr ' .. automationEvent.device.name, automationEvent.parameter.name,
-            automationEvent.type, automationEvent.value,
-            parameterIdPrefix,
-            index)
-          parametersObj[parameterIdPrefix][index] = {
-            _attr = {
-              id = parameterIdPrefix .. '-' .. index,
-              name = automationEvent.parameter.name,
-              parameterID = automationEvent.paramIndex,
-              unit = "normalized",
-              min = "0",
-              max = "1"
-            }
-          }
-        end
-
-        local points = automationsObj[trackNum][index].RealPoint
-        points[#points + 1] = {
+      local objTarget = automationsObj[trackNum]
+      if (automationsObj[trackNum] == nil) then
+        automationsObj[trackNum] = {}
+        coroutine.yield()
+        fancyStatus:show_status('Exporting automation data to .dawproject' .. Helpers:generateStatusAnimation())
+      end
+      if (automationsObj[trackNum][index] == nil) then
+        automationsObj[trackNum][index] = {
           _attr = {
-            time = Helpers:round(automationEvent.timestamp * scaleFactor, 6),
-            value = Helpers:round(automationEvent.value, 6),
-            interpolation = 'linear'
+            name = automationEvent.parameter.name,
+            unit = "normalized"
+          },
+          Target = {
+            _attr = {
+              parameter = parameterIdPrefix .. '-' .. index,
+              expression = DawProject:mapExpressionType(automationEvent),
+              controller = automationEvent.type == 'CC' and automationEvent.paramIndex or nil,
+              channel = "0"
+            }
+          },
+          RealPoint = {}
+        }
+      end
 
+      if (parametersObj[parameterIdPrefix] == nil) then
+        parametersObj[parameterIdPrefix] = {}
+        coroutine.yield()
+        fancyStatus:show_status('Exporting automation data to .dawproject' .. Helpers:generateStatusAnimation())
+      end
+
+      if (parametersObj[parameterIdPrefix][index] == nil) then
+        print('linked param for instr ' .. automationEvent.device.name, automationEvent.parameter.name,
+          automationEvent.type, automationEvent.value,
+          parameterIdPrefix,
+          index)
+        parametersObj[parameterIdPrefix][index] = {
+          _attr = {
+            id = parameterIdPrefix .. '-' .. index,
+            name = automationEvent.parameter.name,
+            parameterID = automationEvent.paramIndex,
+            unit = "normalized",
+            min = "0",
+            max = "1"
           }
         }
       end
+
+      local points = automationsObj[trackNum][index].RealPoint
+      points[#points + 1] = {
+        _attr = {
+          time = Helpers:round(automationEvent.timestamp * scaleFactor, 6),
+          value = Helpers:round(automationEvent.value, 6),
+          interpolation = 'linear'
+
+        }
+      }
     end
   end
 
