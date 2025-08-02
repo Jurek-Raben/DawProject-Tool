@@ -54,7 +54,7 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
       noteKey = position.column .. "_" .. position.track
 
       local checkForNoteEvent = function(_noteKey)
-        -- Note-Off / Cut
+        -- insert at note-off
         local noteOn = activeNotes[_noteKey]
         if noteOn then
           noteOn.lineDuration = (lineOffset + position.line - 1) - noteOn.absLineNum
@@ -86,7 +86,7 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
       if noteColumn.note_value >= 0 and noteColumn.note_value < renoise.PatternLine.NOTE_OFF then
         checkForNoteEvent(noteKey)
 
-        -- add note-on
+        -- prepare at note-on
         activeNotes[noteKey] = {
           key = noteColumn.note_value,
           noteString = noteColumn.note_string,
@@ -184,8 +184,10 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
     if (device.device_path == "Audio/Effects/Native/*Instr. Automation") then
       --local targetInstrumentNum = DeviceHelpers:getActivePresetDataContent(device, 'LinkedInstrument') + 1
       local targetInstrumentNum = getInstrNum()
-      if (targetInstrumentNum) then
-        print('found instr autom dev at tr' .. trackNum .. ' target instr nr' .. targetInstrumentNum)
+
+      if (targetInstrumentNum == nil) then
+        print('error: could not find instr autom dev at tr' .. trackNum)
+      else
         targetDevice = Song:instrument(targetInstrumentNum)
         deviceIndexString = "i" .. targetInstrumentNum
 
@@ -202,20 +204,21 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
           end
           for c = 1, #_targetDevice.parameters do
             if (_targetDevice:parameter(c).name == paramName) then
-              print('found param name ', paramName, ' at ', c)
               self.automationCache:set(cacheKey, c - 1)
               return c - 1
             end
           end
-          print('error: instrument index not found', targetDevice.name)
+          print('error: instrument param index not found', targetDevice.name, paramName)
           return nil
         end
       end
     elseif (device.device_path == "Audio/Effects/Native/*Instr. MIDI Control") then
       --local targetInstrumentNum = DeviceHelpers:getActivePresetDataContent(device, 'LinkedInstrument') + 1
       local targetInstrumentNum = getInstrNum()
-      if (targetInstrumentNum) then
-        print('found midi control dev at tr' .. trackNum .. ' target instr nr' .. targetInstrumentNum)
+
+      if (targetInstrumentNum == nil) then
+        print('error: could not find midi control dev at tr' .. trackNum)
+      else
         targetDevice = Song:instrument(targetInstrumentNum)
         deviceIndexString = "i" .. targetInstrumentNum
 

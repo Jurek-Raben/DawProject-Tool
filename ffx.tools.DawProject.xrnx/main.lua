@@ -21,7 +21,6 @@ require('lib/ReduxPluginHelpers')
 require('lib/Cache')
 
 
-
 --------------------------------------------------------------------------------
 -- Global helpers
 --------------------------------------------------------------------------------
@@ -272,7 +271,6 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
       }
     }
   end
-
 
   return { automationsObj = automationsObj, parametersObj = parametersObj }
 end

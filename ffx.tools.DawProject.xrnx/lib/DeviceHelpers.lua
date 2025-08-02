@@ -36,7 +36,7 @@ end
 function DeviceHelpers:convertBinaryToVst2Preset(pluginInfo, presetName, data)
   local lenData = string.len(data)
   presetName = string.sub(presetName, 1, 27)
-  local vstPresetData = {
+  return table.concat({
     'CcnK',                                                              -- VST2 root chunk identifier
     Helpers:intToBinaryBE(lenData + 52, 4),                              -- size of this chunk, excl. magic + byteSize, 4 bytes, +52
     'FPCh',                                                              -- 'FxCk' (regular) or 'FPCh' (opaque chunk)
@@ -47,9 +47,7 @@ function DeviceHelpers:convertBinaryToVst2Preset(pluginInfo, presetName, data)
     presetName .. Helpers:intToBinaryBE(0, 28 - string.len(presetName)), -- program name (null-terminated ASCII string), 28 bytes
     Helpers:intToBinaryBE(lenData, 4),                                   -- size of program data, 4 bytes
     data,                                                                -- chunk data
-  }
-
-  return table.concat(vstPresetData, '')
+  }, '')
 end
 
 function DeviceHelpers:convertBinaryToVst3Preset(pluginId, data)
@@ -77,12 +75,8 @@ function DeviceHelpers:readPluginInfo(device)
   local filePath = nil
   local isBridged = nil
   local dbPath = renoise.tool().bundle_path:match("(.*Renoise/V" .. renoise.RENOISE_VERSION .. "/)")
-  local vst2ToolPath = "vst2info-tool-" .. Helpers:getShortOSString()
-
-  if (Helpers:getShortOSString() == "win") then
-    vst2ToolPath = vst2ToolPath .. ".exe"
-  end
-
+  local vstToolPath = nil
+  local osString = Helpers:getShortOSString()
 
   if (pluginInfo) then
     return pluginInfo
@@ -95,14 +89,19 @@ function DeviceHelpers:readPluginInfo(device)
     dbPathAddon = 'x64'
   end
 
-  -- vst2
-  if (string.find(pluginPath, "VST/")) then
+
+  if (string.find(pluginPath, "VST/")) then -- vst2
     dbPath = dbPath .. "CachedVSTs_" .. dbPathAddon .. ".db"
+    vstToolPath = "vst2info-tool-" .. osString
+  elseif (string.find(pluginPath, "VST3/")) then -- vst3
+    dbPath = dbPath .. "CachedVST3s_" .. dbPathAddon .. ".db"
+    vstToolPath = "vst3info-tool-" .. osString
+  else
+    return nil
   end
 
-  -- vst3
-  if (string.find(pluginPath, "VST3/")) then
-    dbPath = dbPath .. "CachedVST3s_" .. dbPathAddon .. ".db"
+  if (Helpers:getShortOSString() == "win") then
+    vstToolPath = vstToolPath .. ".exe"
   end
 
   print("opening db at", dbPath, "for", pluginId)
@@ -116,10 +115,7 @@ function DeviceHelpers:readPluginInfo(device)
     return nil
   end
 
-  -- Files CachedVST3s_arm64/_x64 or CachedVSTs_arm64/_x64
-  -- Table "CachedPlugins", column "DocumentIdentifier"
   local sql = "SELECT LocalFilePath, IsBridged FROM CachedPlugins WHERE DocumentIdentifier = '" .. pluginId .. "';"
-
   local result = {}
   for a in db:rows(sql) do
     for _, v in ipairs(a) do
@@ -136,27 +132,36 @@ function DeviceHelpers:readPluginInfo(device)
   isBridged = result[2]
   filePath = result[1]
 
-  if (jit.arch == "arm64" and isBridged == 1 or (jit.arch == "x86_64" or jit.arch == "amd64") and isBridged == 0) then
-    vst2ToolPath = vst2ToolPath .. '-x64'
-  elseif (jit.arch == "arm64" and isBridged == 0) then
-    vst2ToolPath = vst2ToolPath .. '-arm'
-  elseif ((jit.arch == "x86_64" or jit.arch == "amd64") and isBridged == 1) then
+  if (osString == 'mac') then
+    if (jit.arch == "arm64" and isBridged == 1 or (jit.arch == "x86_64" or jit.arch == "amd64") and isBridged == 0) then
+      vstToolPath = vstToolPath .. '-x64'
+    elseif (jit.arch == "arm64" and isBridged == 0) then
+      vstToolPath = vstToolPath .. '-arm'
+    elseif ((jit.arch == "x86_64" or jit.arch == "amd64") and isBridged == 1) then
+      return nil
+    end
+  end
+
+  if (not io.exists('./bin/' .. vstToolPath)) then
+    print("error: vst info tool does not exist under", './bin/' .. vstToolPath)
     return nil
   end
 
-  if (not io.exists('./bin/' .. vst2ToolPath)) then
-    print("error: vst2 info tool does not exist under", './bin/' .. vst2ToolPath)
-    return nil
-  end
+  print("executing", vstToolPath .. " '" .. filePath .. "'")
+  vstToolPath = "cd ./bin;./" .. vstToolPath
+  local toolOutput = Helpers:captureConsole(vstToolPath .. " '" .. filePath .. "'")
 
-  print("executing", vst2ToolPath .. " '" .. filePath .. "'")
-  vst2ToolPath = "cd ./bin;./" .. vst2ToolPath
-  local toolOutput = Helpers:captureConsole(vst2ToolPath .. " '" .. filePath .. "'")
   local json = require('lib/json')
   pcall(function()
     pluginInfo = json.decode(toolOutput)
+    if (pluginInfo['error'] ~= nil) then
+      print("error: vst info tool thrown", pluginInfo['error'])
+      return nil
+    end
+
     print("tool output:")
     rprint(pluginInfo)
+
     self.cache:set(pluginPath, pluginInfo)
   end)
   return pluginInfo
