@@ -3,7 +3,7 @@ end
 --------------------------------------------------------------------------------
 -- Daw Project
 -- by Jurek Raben
--- v0.1.3
+-- v0.1.5
 --
 -- Licensed under CC Attribution-NonCommercial-ShareAlike 4.0 International
 -- Info here: https://creativecommons.org/licenses/by-nc-sa/4.0/
@@ -53,7 +53,7 @@ ZipUnpackCommand = 'tar -xf %s --directory ' .. TempDir
 
 DawProject.defaultConfig = {
   convertToRedux = true,
-  exportVST2 = false,
+  exportVST2 = true,
   exportVST3 = true,
   addTrackDelayToClips = true,
   devMode = true,

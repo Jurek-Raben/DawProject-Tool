@@ -2,8 +2,8 @@
 <RenoiseScriptingTool doc_version="0">
   <ApiVersion>6.2</ApiVersion>
   <Id>ffx.tools.DawProject</Id>
-  <Version>0.1.3</Version>
-  <Author>Jurek Raben, ...</Author>
+  <Version>0.1.5</Version>
+  <Author>Jurek Raben</Author>
   <Name>Daw Project Support</Name>
   <Category>Tools</Category>
   <Description>Import or export .dawproject files</Description>
