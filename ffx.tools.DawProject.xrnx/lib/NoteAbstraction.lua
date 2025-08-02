@@ -246,14 +246,8 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
             automationEvents[trackNum] = {}
           end
 
-          local key = y * 256 + paramIndex
-          --if (automationEvents[trackNum][key] == nil) then
-          --  automationEvents[trackNum][key] = {}
-          --end
-
           table.insert(automationEvents[trackNum],
             {
-              key = key,
               device = targetDevice,
               deviceIndex = deviceIndex,
               paramIndex = getIndex(paramIndex),
