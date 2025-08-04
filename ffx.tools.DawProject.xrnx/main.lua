@@ -39,6 +39,7 @@ class "DawProject"
 DawProject.configurator = nil
 DawProject.automatedParametersCache = Cache()
 DawProject.instrIndexCache = Cache()
+DawProject.toolPluginCache = Cache()
 local config = {}
 
 TempDir = './tmp'
@@ -56,7 +57,8 @@ DawProject.defaultConfig = {
   exportVST3 = true,
   addTrackDelayToClips = true,
   devMode = true,
-  useVST2InfoTool = true
+  useVST2InfoTool = true,
+  useVST3InfoTool = true
 }
 
 DawProject.configDescription = {
@@ -66,6 +68,7 @@ DawProject.configDescription = {
   addTrackDelayToClips = { type = "boolean", txt = "Add the track delay ms to the clip position" },
   devMode = { type = "boolean", txt = "Adds some debugging menu entries / functionality" },
   useVST2InfoTool = { type = "boolean", txt = "Hacky workaround using a binary tool for plugin id extraction" },
+  useVST3InfoTool = { type = "boolean", txt = "Hacky workaround using a binary tool for parameter id extraction" },
 }
 
 if (os.platform() == 'MACINTOSH') then
@@ -245,6 +248,26 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
     end
 
     if (parametersObj[parameterIdPrefix][paramIndex] == nil) then
+      local parameterID = automationEvent.paramIndex
+      if (config['useVST3InfoTool'] == true and string.find(automationEvent.device.device_path, "VST3/") ~= nil) then
+        local pluginInfo = self.toolPluginCache:get(automationEvent.device.device_path)
+        if (pluginInfo == nil) then
+          pluginInfo = DeviceHelpers:readPluginInfo(automationEvent.device)
+        end
+
+        self.toolPluginCache:set(automationEvent.device.device_path, pluginInfo)
+
+        if (pluginInfo) then
+          local foundParamObj = DeviceHelpers:getPluginInfoParameterObject(pluginInfo, automationEvent.paramIndex)
+          if (foundParamObj) then
+            print('found param', foundParamObj['title'])
+            print('found param id', foundParamObj['id'])
+            print('name', automationEvent.parameter.name)
+            parameterID = foundParamObj['id']
+          end
+        end
+      end
+
       print('linked param for instr ' .. automationEvent.device.name, automationEvent.parameter.name,
         automationEvent.type, automationEvent.value,
         parameterIdPrefix,
@@ -253,7 +276,7 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
         _attr = {
           id = parameterIdPrefix .. '-' .. paramIndex,
           name = automationEvent.parameter.name,
-          parameterID = automationEvent.paramIndex,
+          parameterID = parameterID,
           unit = "normalized",
           min = "0",
           max = "1"
@@ -515,9 +538,15 @@ function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterId
       -- FIXME active_preset_data is defective
       --print('vst2', device.short_name, device.active_preset_data)
       if (config['useVST2InfoTool'] == true) then
-        local pluginInfo = DeviceHelpers:readPluginInfo(device)
+        local pluginInfo = self.toolPluginCache:get(device.device_path)
+        if (pluginInfo == nil) then
+          pluginInfo = DeviceHelpers:readPluginInfo(device)
+        end
+
         coroutine.yield()
         fancyStatus:show_status('Exporting track structure to .dawproject' .. Helpers:generateStatusAnimation())
+
+        self.toolPluginCache:set(device.device_path, pluginInfo)
 
         if (pluginInfo) then
           attr.deviceID = pluginInfo['id'] or attr.deviceID

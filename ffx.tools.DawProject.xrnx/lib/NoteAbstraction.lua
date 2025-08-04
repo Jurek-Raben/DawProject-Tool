@@ -190,7 +190,7 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
       if (targetInstrumentNum == nil) then
         print('error: could not find instr autom dev at tr' .. trackNum)
       else
-        targetDevice = Song:instrument(targetInstrumentNum)
+        targetDevice = Song:instrument(targetInstrumentNum).plugin_properties.plugin_device
         deviceIndexString = "i" .. targetInstrumentNum
 
         getIndex = function(paramNum)
@@ -200,12 +200,8 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
           end
 
           local paramName = device:parameter(paramNum).name
-          local _targetDevice = targetDevice.plugin_properties.plugin_device
-          if (_targetDevice == nil) then
-            return nil
-          end
-          for c = 1, #_targetDevice.parameters do
-            if (_targetDevice:parameter(c).name == paramName) then
+          for c = 1, #targetDevice.parameters do
+            if (targetDevice:parameter(c).name == paramName) then
               self.automationCache:set(cacheKey, c - 1)
               return c - 1
             end
@@ -221,7 +217,7 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
       if (targetInstrumentNum == nil) then
         print('error: could not find midi control dev at tr' .. trackNum)
       else
-        targetDevice = Song:instrument(targetInstrumentNum)
+        targetDevice = Song:instrument(targetInstrumentNum).plugin_properties.plugin_device
         deviceIndexString = "i" .. targetInstrumentNum
 
         getIndex = function(paramNum)

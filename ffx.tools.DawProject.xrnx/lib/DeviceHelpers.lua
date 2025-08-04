@@ -160,9 +160,23 @@ function DeviceHelpers:readPluginInfo(device)
     end
 
     print("tool output:")
-    rprint(pluginInfo)
+    if (string.find(pluginPath, "VST3/")) then
+      print('parameters size', #pluginInfo['parameters'])
+    else
+      rprint(pluginInfo)
+    end
 
     self.cache:set(pluginPath, pluginInfo)
   end)
   return pluginInfo
+end
+
+function DeviceHelpers:getPluginInfoParameterObject(pluginInfo, searchIndex)
+  for i = 1, #pluginInfo['parameters'] do
+    local paramObj = pluginInfo['parameters'][i]
+    if (paramObj['index'] == searchIndex) then
+      return paramObj
+    end
+  end
+  return nil
 end
