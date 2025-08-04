@@ -3,7 +3,7 @@ end
 --------------------------------------------------------------------------------
 -- Daw Project
 -- by Jurek Raben
--- v0.1.5
+-- v0.1.6
 --
 -- Licensed under CC Attribution-NonCommercial-ShareAlike 4.0 International
 -- Info here: https://creativecommons.org/licenses/by-nc-sa/4.0/
@@ -258,11 +258,12 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
         self.toolPluginCache:set(automationEvent.device.device_path, pluginInfo)
 
         if (pluginInfo) then
-          local foundParamObj = DeviceHelpers:getPluginInfoParameterObject(pluginInfo, automationEvent.paramIndex)
+          local foundParamObj = DeviceHelpers:findPluginInfoParameterObjectByIndex(pluginInfo, automationEvent
+            .paramIndex)
           if (foundParamObj) then
-            print('found param', foundParamObj['title'])
+            print('found param name', foundParamObj['title'])
             print('found param id', foundParamObj['id'])
-            print('name', automationEvent.parameter.name)
+            print('matching param name', automationEvent.parameter.name)
             parameterID = foundParamObj['id']
           end
         end

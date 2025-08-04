@@ -171,7 +171,7 @@ function DeviceHelpers:readPluginInfo(device)
   return pluginInfo
 end
 
-function DeviceHelpers:getPluginInfoParameterObject(pluginInfo, searchIndex)
+function DeviceHelpers:findPluginInfoParameterObjectByIndex(pluginInfo, searchIndex)
   for i = 1, #pluginInfo['parameters'] do
     local paramObj = pluginInfo['parameters'][i]
     if (paramObj['index'] == searchIndex) then

@@ -2,6 +2,8 @@
 * ------------------------------------------------------------------------
 * VST3 Info Extractor Tool
 * heavily based on rust-vst3-host by Helge Sverre
+* https://github.com/HelgeSverre/rust-vst3-host
+*
 * by Jurek Raben
 * ------------------------------------------------------------------------
 */
