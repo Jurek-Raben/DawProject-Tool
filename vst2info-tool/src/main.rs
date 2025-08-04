@@ -11,7 +11,6 @@
 extern crate vst2;
 
 use std::env;
-use std::error::Error;
 use std::panic;
 use std::path::PathBuf;
 use std::process::exit;
@@ -62,7 +61,7 @@ fn main() {
 
     let host = Arc::new(Mutex::new(SampleHost));
     let mut loader =
-        PluginLoader::load(&path, host.clone()).unwrap_or_else(|e| panic!("{}", e.description()));
+        PluginLoader::load(&path, host.clone()).unwrap_or_else(|e| panic!("{}", e.to_string()));
 
     let mut instance = loader.instance().unwrap();
     let info = instance.get_info();

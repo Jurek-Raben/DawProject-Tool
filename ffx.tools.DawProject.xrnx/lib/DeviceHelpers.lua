@@ -89,7 +89,6 @@ function DeviceHelpers:readPluginInfo(device)
     dbPathAddon = 'x64'
   end
 
-
   if (string.find(pluginPath, "VST/")) then -- vst2
     dbPath = dbPath .. "CachedVSTs_" .. dbPathAddon .. ".db"
     vstToolPath = "vst2info-tool-" .. osString
@@ -148,6 +147,7 @@ function DeviceHelpers:readPluginInfo(device)
   end
 
   print("executing", vstToolPath .. " '" .. filePath .. "'")
+  -- execute within bin directory, since some plugins will generate trash file data
   vstToolPath = "cd ./bin;./" .. vstToolPath
   local toolOutput = Helpers:captureConsole(vstToolPath .. " '" .. filePath .. "'")
 

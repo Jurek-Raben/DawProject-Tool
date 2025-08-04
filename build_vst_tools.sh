@@ -33,3 +33,17 @@ cp ./target/release/vst2info-tool ../ffx.tools.DawProject.xrnx/bin/vst2info-tool
 fi
 
 cd ..
+
+
+
+# build vst2info-tool
+cd vst3info-tool
+
+if [[ "$OSTYPE" == "darwin"* ]]; then
+cargo b -r  --target=x86_64-apple-darwin --target=aarch64-apple-darwin
+cp ./target/x86_64-apple-darwin/release/vst3info-tool ../ffx.tools.DawProject.xrnx/bin/vst3info-tool-mac-x64
+cp ./target/aarch64-apple-darwin/release/vst3info-tool ../ffx.tools.DawProject.xrnx/bin/vst3info-tool-mac-arm
+
+fi
+
+cd ..

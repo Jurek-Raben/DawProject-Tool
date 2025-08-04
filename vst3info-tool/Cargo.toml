@@ -1,0 +1,25 @@
+[package]
+name = "vst3info-tool"
+version = "0.1.0"
+edition = "2024"
+"authors" = ["Jurek Raben"]
+repository = "https://github.com/Jurek-Raben/DawProject-Tool"
+
+[dependencies]
+json = "0.12.4"
+vst3 = "0.1.2"
+libloading = "0.8.8"
+
+# Platform-specific dependencies
+[target.'cfg(target_os = "macos")'.dependencies]
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winapi = { version = "0.3.9", features = [
+    "winuser",
+    "windef",
+    "libloaderapi",
+    "processenv",
+    "winbase",
+    "handleapi",
+    "errhandlingapi"
+] }
