@@ -8,6 +8,7 @@
 -------------------------------------------------------------------------------
 
 require('lib/Cache')
+local json = require('lib/json')
 
 
 DeviceHelpers = {}
@@ -151,7 +152,13 @@ function DeviceHelpers:readPluginInfo(device)
   vstToolPath = "cd ./bin;./" .. vstToolPath
   local toolOutput = Helpers:captureConsole(vstToolPath .. " '" .. filePath .. "'")
 
-  local json = require('lib/json')
+  -- plugins might output to the console by themselves
+  local startOffset = string.find(toolOutput, "{\"")
+  if (startOffset == nil) then
+    return nil
+  end
+  toolOutput = string.sub(toolOutput, startOffset)
+
   pcall(function()
     pluginInfo = json.decode(toolOutput)
     if (pluginInfo['error'] ~= nil) then

@@ -11,14 +11,15 @@ Sadly I had to halt the development of this tool, due to API limitations, which 
 - Track automation data
 - Section naming
 - Track coloring and naming
-- Loads fine into Bitwig 5.3+ and Studio One 7.2+
+- Loads fine into Bitwig 5.3+ (all) and Studio One 7.2+ (VST3 only)
 - You can also convert any sample instrument to Redux VST3 via context menu
 
 #### Partly working so far
 
 - Track automation mapping, this only works so far, if the VST3 uses index as parameterID, e.g. Redux VST3. But most plugins won't work, because they use unique parameter ids instead. The tool currently exports the index value.
 - VST3 preset export, read below
-- VST2 preset export using the VST2 info tool included (a workaround)
+- Workaround VST2 preset export (via included VST2 helper tool)
+- Workaround VST3 fx automation (via included VST3 helper tool)
 
 #### What’s missing / not implemented yet
 
@@ -27,6 +28,7 @@ Sadly I had to halt the development of this tool, due to API limitations, which 
 - Redux macro device to instrument device automation conversion
 - polyphonic aftertouch
 - No idea why VST3 preset loading fails in Cubase 14+. Might be the preset data itself. As a workaround, load the exported dawproject into S1 and then again export as dawproject. Bitwig exports also fail to load in Cubase. S1 uses an uncompressed zip type.
+- VST2 preset loading and mapping is buggy in Studio One currently and needs to be fixed.
 
 #### This can't work due to the API limitations
 
@@ -42,17 +44,17 @@ Sadly I had to halt the development of this tool, due to API limitations, which 
 A song has to fulfill the following requirements for a working export:
 
 - Only one instrument per track! Use [Fladd's track splitter tool](https://www.renoise.com/tools/split-into-separate-tracks)!
-- The Instr. Automation Device has to be placed onto the track where the target instrument is playing
+- The Instr. Automation Device has to be placed onto the track where the target instrument is playing.
 
 #### Automatic workarounds
 
-The tool can use a vst2info tool to extract the missing plugin infos, which I coded in Rust. There are pre-built binaries included in the `/bin` sub directory, pre-built for macOS (arm/intel ub2), windows x86_64, linux x86_64.
+The tool can use VST2/3 info tools to extract the missing plugin infos, which I coded in Rust. There are pre-built binaries included in the `/bin` sub directory, pre-built for macOS (arm/intel ub2), windows x86_64, linux x86_64.
 
 #### Manual workarounds
 
-- You can enable VST2 export, and then manually export each preset, overwrite the generated file(s) in the /tmp directory. And then use the "Repack .dawproject" menu entry.
+- You can manipulate the generated dawproject data inside the "tmp" directory of the tool and then use the "Repack .dawproject" menu entry.
 - Same for AudioUnit, but here you would also have to figure out the parameter ids and fix it in the project.xml (Search for "AuPlugin" and then the "Parameters" node, in here the parameterID attributes)
-- For most VST3 automation, you will have to figure out the parameter ids and fix it in the project.xml (Search for "Vst3Plugin" and then the "Parameters" node, in here the parameterID attributes). You can use another daw which exports dawproject, adding those parameters as automation first, and then look into that project.xml... Yes, very cumbersome...
+- For some VST3 instrument automation (helper tool isn't working for instruments yet), you will have to figure out the parameter ids and fix it in the project.xml (Search for "Vst3Plugin" and then the "Parameters" node, in here the parameterID attributes). You can use another daw which exports dawproject, adding those parameters as automation first, and then look into that project.xml... Yes, cumbersome...
 
 ####
 
@@ -107,6 +109,14 @@ Also FancyStatus and ProcessSlicer.
 Licensed under CC Attribution-NonCommercial-ShareAlike 4.0 International - https://creativecommons.org/licenses/by-nc-sa/4.0/
 
 Can be changed.
+
+## Disclaimer
+
+This Renoise tool currently **contains pre-built binaries of the VST info helper tools**. I built those on my macOS system using the recommended toolchains for Rust. If you are unsure you can build these yourself, or simply disable the usage in the tool's preferences. Building will require basic knowledge about how to setup a Rust dev environment. macOS should work best for that purpose.
+
+So I am not responsible for any damage these binaries could do to your system and your data. **Use at your own risk!**
+
+However, the binaries appear to behave quite normally here ;)
 
 ## Download
 
