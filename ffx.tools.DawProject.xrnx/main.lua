@@ -3,7 +3,7 @@ end
 --------------------------------------------------------------------------------
 -- Daw Project
 -- by Jurek Raben
--- v0.1.6
+-- v0.1.7
 --
 -- Licensed under CC Attribution-NonCommercial-ShareAlike 4.0 International
 -- Info here: https://creativecommons.org/licenses/by-nc-sa/4.0/
@@ -72,7 +72,7 @@ DawProject.configDescription = {
 }
 
 if (os.platform() == 'MACINTOSH') then
-  DawProject.defaultConfig.exportAU = false
+  DawProject.defaultConfig.exportAU = true
   DawProject.configDescription.exportAU = {
     type = "boolean",
     txt = "Export AudioUnit plugins (not possible due to api limitations)",
@@ -262,6 +262,26 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
             .paramIndex)
           if (foundParamObj) then
             print('found param name', foundParamObj['title'])
+            print('found param id', foundParamObj['id'])
+            print('matching param name', automationEvent.parameter.name)
+            parameterID = foundParamObj['id']
+          end
+        end
+      end
+
+      if (os.platform() == 'MACINTOSH' and config['exportAU'] == true and string.find(automationEvent.device.device_path, "AU/") ~= nil) then
+        local pluginInfo = self.toolPluginCache:get(automationEvent.device.device_path)
+        if (pluginInfo == nil) then
+          local deviceID = DeviceHelpers:getActivePresetDataContent(automationEvent.device, 'PluginIdentifier')
+          pluginInfo = DeviceHelpers:extractAUDeviceParameterIDs(deviceID)
+        end
+
+        self.toolPluginCache:set(automationEvent.device.device_path, pluginInfo)
+
+        if (pluginInfo) then
+          local foundParamObj = DeviceHelpers:findPluginInfoParameterObjectByIndex(pluginInfo, automationEvent
+            .paramIndex)
+          if (foundParamObj) then
             print('found param id', foundParamObj['id'])
             print('matching param name', automationEvent.parameter.name)
             parameterID = foundParamObj['id']
@@ -583,8 +603,10 @@ function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterId
 
     -- AudioUnit
     if (os.platform() == 'MACINTOSH' and config['exportAU'] == true and string.find(device.device_path, "AU/") ~= nil) then
-      -- FIXME active_preset_data is defective
-      Helpers:writeFile(TempDir .. "/plugins/" .. deviceSavePath .. ".aupreset", binParameterChunkData)
+      local presetPath = TempDir .. "/plugins/" .. deviceSavePath .. ".aupreset"
+      Helpers:writeFile(presetPath, binParameterChunkData)
+      DeviceHelpers:convertPListPresetToXML(presetPath)
+      attr.deviceID = DeviceHelpers:convertAUDeviceIDToWeirdS1Format(attr.deviceID)
       devicesObj[#devicesObj + 1] = {
         AuPlugin = {
           _attr = attr,

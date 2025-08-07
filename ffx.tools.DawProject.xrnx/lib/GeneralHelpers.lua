@@ -124,6 +124,16 @@ function Helpers:intToBinaryBE(intValue, numBytes)
   return Helpers:hexToCharBigEndian(string.format("%0" .. (numBytes * 2) .. "x", intValue))
 end
 
+function Helpers:stringToHex(text)
+  local hex = ""
+  for i = 1, #text do
+    local char = string.sub(text, i, i)
+    local hexValue = string.format("%02X", string.byte(char))
+    hex = hex .. hexValue
+  end
+  return hex
+end
+
 function Helpers:prepareFilenameForXML(string)
   return string.lower(string:gsub('[%p%c%s]', ''))
 end

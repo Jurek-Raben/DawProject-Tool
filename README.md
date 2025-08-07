@@ -2,26 +2,27 @@
 
 A very early state, kind of a scaffolding of a daw project export tool (and later import maybe) for the Renoise DAW, starting from version 3.5 and upwards.
 
-Sadly I had to halt the development of this tool, due to API limitations, which would be easy to add, because everything already is implemented under the hood.
+Sadly it is not possible currently to provide a complete tool without a lot of workarounds, due to API limitations. These would be easy to add, because everything already is implemented under the hood, just not made available in the API. Please read my suggestions for the Renoise API below.
 
 #### Working so far
 
 - Auto converts Renoise sample instruments into Redux instances, to make it loadable in the target DAW
 - Note data and song structure
-- Track automation data
+- Plugin automation data
 - Section naming
 - Track coloring and naming
-- Loads fine into Bitwig 5.3+ (all) and Studio One 7.2+ (VST3 only)
+- Loads fine into Bitwig 5.3+ (all) and Studio One 7.2+ (VST3 completely, AU without automation)
 - You can also convert any sample instrument to Redux VST3 via context menu
+- AudioUnit preset and automation export (not working in S1, due to bugs in S1)
+- VST3 preset export
 
 #### Partly working so far
 
-- Track automation mapping, this only works so far, if the VST3 uses index as parameterID, e.g. Redux VST3. But most plugins won't work, because they use unique parameter ids instead. The tool currently exports the index value.
-- VST3 preset export, read below
 - Workaround VST2 preset export (via included VST2 helper tool)
+- Workaround VST2 automation (via included VST2 helper tool)
 - Workaround VST3 fx automation (via included VST3 helper tool)
 
-#### What’s missing / not implemented yet
+#### What’s not working / not implemented yet
 
 - Master track automation conversion
 - Any kind of pattern hex automation conversion
@@ -29,8 +30,9 @@ Sadly I had to halt the development of this tool, due to API limitations, which 
 - polyphonic aftertouch
 - No idea why VST3 preset loading fails in Cubase 14+. Might be the preset data itself. As a workaround, load the exported dawproject into S1 and then again export as dawproject. Bitwig exports also fail to load in Cubase. S1 uses an uncompressed zip type.
 - VST2 preset loading and mapping is buggy in Studio One currently and needs to be fixed.
+- Studio One will incorrectly set/interpret the parameter ids for AudioUnits. Therefore automation for AudioUnits currently is lost in Studio One.
 
-#### This can't work due to the API limitations
+#### This can't work using API only, due to the API limitations
 
 - VST2/AU preset generation/export. Renoise does not provide any way to get the .fxp / .aupreset data. The device.active_preset data only contains the individual inline song data of the VST2 or AU plugin, assumingly different to VST3. This is already implemented in Renoise via "import preset..." and "export preset...", just not made available in the API for unknown reasons.
 - VST3 preset export might be wonky, because it grabs the preset data from device.active_preset_data's `<ParameterChunk>` node, assuming that this is simply the complete .vstpreset. But it might not be the case for every plugin...
@@ -38,6 +40,7 @@ Sadly I had to halt the development of this tool, due to API limitations, which 
 - The correct VST2 plugin identifier can't be set (an integer, which you see as "Unique ID" in the plugin info tooltip), since it is neither available in the API nor in device.active_preset_data, but required for VST2 preset loading
 - You can’t determine the target device of the "Instr. Automation Device" via API currently. Has to be done through a complete track search instead (so the device has to sit on the track where the instrument plays). That `<LinkedInstrument>` node is missing in the active_preset_data for some reason, if you access it via API (not copy-paste).
 - An import can only work for the song structure, but not for preset transferring, due to the same API limitations.
+- AudioUnit parameter mapping is not possible, due to missing parameter ID infos.
 
 #### Song requirements
 
@@ -53,8 +56,7 @@ The tool can use VST2/3 info tools to extract the missing plugin infos, which I 
 #### Manual workarounds
 
 - You can manipulate the generated dawproject data inside the "tmp" directory of the tool and then use the "Repack .dawproject" menu entry.
-- Same for AudioUnit, but here you would also have to figure out the parameter ids and fix it in the project.xml (Search for "AuPlugin" and then the "Parameters" node, in here the parameterID attributes)
-- For some VST3 instrument automation (helper tool isn't working for instruments yet), you will have to figure out the parameter ids and fix it in the project.xml (Search for "Vst3Plugin" and then the "Parameters" node, in here the parameterID attributes). You can use another daw which exports dawproject, adding those parameters as automation first, and then look into that project.xml... Yes, cumbersome...
+- For some VST3 instrument automation (the helper tool isn't working for all instruments yet), you will have to figure out the parameter ids and fix it in the project.xml (Search for "Vst3Plugin" and then the "Parameters" node, in here the parameterID attributes). You can use another daw which exports dawproject, adding those parameters as automation first, and then look into that project.xml... Yes, cumbersome...
 
 ####
 
@@ -116,7 +118,7 @@ This Renoise tool currently **contains pre-built binaries of the VST info helper
 
 So I am not responsible for any damage these binaries could do to your system and your data. **Use at your own risk!**
 
-However, the binaries appear to behave quite normally here ;)
+However, the binaries appear to behave normally here ;)
 
 ## Download
 

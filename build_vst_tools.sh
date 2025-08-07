@@ -36,7 +36,7 @@ cd ..
 
 
 
-# build vst2info-tool
+# build vst3info-tool
 cd vst3info-tool
 
 if [[ "$OSTYPE" == "darwin"* ]]; then

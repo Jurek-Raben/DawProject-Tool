@@ -70,6 +70,43 @@ function DeviceHelpers:convertBinaryToVst3Preset(pluginId, data)
   }, '')
 end
 
+function DeviceHelpers:convertAUDeviceIDToWeirdS1Format(deviceID)
+  return Helpers:stringToHex(table.concat({
+    string.sub(deviceID, 1, 4),                                                                   -- "aufx" stays unchanged
+    string.sub(deviceID, 8, 9) .. string.sub(deviceID, 6, 7),                                     -- "MyId" turns into "IdMy" 🥳
+    string.sub(deviceID, 14, 14) ..
+    string.sub(deviceID, 13, 13) .. string.sub(deviceID, 12, 12) .. string.sub(deviceID, 11, 11), -- "MyId" now is reversed into "dIyM" 😵‍💫
+    "BALK"                                                                                        -- this also is added for unknown reasons
+  }, ''))
+end
+
+function DeviceHelpers:extractAUDeviceParameterIDs(deviceID)
+  local auValOutput = Helpers:captureConsole('auval -v  ' .. deviceID:gsub(":", " "))
+
+  local pluginInfo = {
+    parameters = {}
+  }
+  local startOffset = 0
+  local endOffset = 0
+  local _endOffset = 0
+  local _endOffset2 = 0
+  local index = 0
+
+  while (startOffset ~= nil and endOffset ~= nil) do
+    startOffset, _endOffset = string.find(auValOutput, "Parameter ID:", startOffset)
+    endOffset, _endOffset2 = string.find(auValOutput, " ", _endOffset)
+    if (startOffset ~= nil and _endOffset2 ~= nil) then
+      table.insert(pluginInfo.parameters,
+        { id = tonumber(string.sub(auValOutput, startOffset + 13, endOffset - 1)), index = index }
+      )
+      startOffset = _endOffset2
+      index = index + 1
+    end
+  end
+
+  return pluginInfo
+end
+
 function DeviceHelpers:readPluginInfo(device)
   local pluginPath = device.device_path
   local pluginInfo = self.cache:get(pluginPath)
@@ -186,4 +223,8 @@ function DeviceHelpers:findPluginInfoParameterObjectByIndex(pluginInfo, searchIn
     end
   end
   return nil
+end
+
+function DeviceHelpers:convertPListPresetToXML(presetPath)
+  return Helpers:captureConsole('plutil -convert xml1 -s ' .. presetPath)
 end
