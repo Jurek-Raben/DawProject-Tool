@@ -16,11 +16,19 @@ use std::env;
 use std::path::PathBuf;
 use std::process::exit;
 use std::ptr;
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::Ordering;
+use vst3::Steinberg::FUnknown;
 use vst3::Steinberg::IPluginFactoryTrait;
+use vst3::Steinberg::TUID;
+use vst3::Steinberg::Vst::String128;
 use vst3::Steinberg::Vst::{
     BusDirections_::*, IAudioProcessor, IComponent, IComponentTrait, IConnectionPoint,
     IConnectionPointTrait, IEditController, IEditControllerTrait, MediaTypes_::*,
 };
+use vst3::Steinberg::kNoInterface;
+use vst3::Steinberg::kResultOk;
+use vst3::Steinberg::tresult;
 use vst3::Steinberg::{IPluginBaseTrait, IPluginFactory};
 use vst3::{ComPtr, Interface};
 
@@ -34,6 +42,8 @@ struct PluginInfo {
     classes: Vec<ClassInfo>,
     component_info: Option<ComponentInfo>,
     controller_info: Option<ControllerInfo>,
+    name: String,
+    version: String,
 }
 
 #[derive(Debug, Clone)]
@@ -94,6 +104,152 @@ struct ParameterInfo {
     current_value: f64,
 }
 
+struct HostApplication {
+    vtbl: *const IHostApplicationVtbl,
+    ref_count: AtomicU32,
+}
+
+// VTable für Rust-Seite
+#[repr(C)]
+struct IHostApplicationVtbl {
+    query_interface:
+        unsafe extern "C" fn(*mut FUnknown, *const TUID, *mut *mut std::ffi::c_void) -> tresult,
+    add_ref: unsafe extern "C" fn(*mut FUnknown) -> u32,
+    release: unsafe extern "C" fn(*mut FUnknown) -> u32,
+    get_name: unsafe extern "C" fn(*mut HostApplication, *mut String128) -> tresult,
+    create_instance: unsafe extern "C" fn(
+        *mut HostApplication,
+        *mut TUID,
+        *mut TUID,
+        *mut *mut std::ffi::c_void,
+    ) -> tresult,
+}
+
+unsafe extern "C" fn host_query_interface(
+    _this: *mut FUnknown,
+    _iid: *const TUID,
+    _obj: *mut *mut std::ffi::c_void,
+) -> tresult {
+    kNoInterface
+}
+
+unsafe extern "C" fn host_add_ref(this: *mut FUnknown) -> u32 {
+    let host = this as *mut HostApplication;
+    (*host).ref_count.fetch_add(1, Ordering::SeqCst) + 1
+}
+
+unsafe extern "C" fn host_release(this: *mut FUnknown) -> u32 {
+    let host = this as *mut HostApplication;
+    let count = (*host).ref_count.fetch_sub(1, Ordering::SeqCst) - 1;
+    if count == 0 {
+        Box::from_raw(host); // Speicher freigeben
+    }
+    count
+}
+
+unsafe extern "C" fn host_get_name(_this: *mut HostApplication, name: *mut String128) -> tresult {
+    let host_name: Vec<u16> = "RustHost"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    for i in 0..host_name.len() {
+        (*name)[i] = host_name[i] as i16;
+    }
+    kResultOk
+}
+
+unsafe extern "C" fn host_create_instance(
+    _this: *mut HostApplication,
+    _cid: *mut TUID,
+    _iid: *mut TUID,
+    _obj: *mut *mut std::ffi::c_void,
+) -> tresult {
+    kNoInterface
+}
+
+static HOST_VTBL: IHostApplicationVtbl = IHostApplicationVtbl {
+    query_interface: host_query_interface,
+    add_ref: host_add_ref,
+    release: host_release,
+    get_name: host_get_name,
+    create_instance: host_create_instance,
+};
+
+impl HostApplication {
+    fn new() -> *mut FUnknown {
+        let host = Box::new(HostApplication {
+            vtbl: &HOST_VTBL,
+            ref_count: AtomicU32::new(1),
+        });
+        Box::into_raw(host) as *mut FUnknown
+    }
+}
+
+use std::fs::File;
+#[cfg(unix)]
+use std::io;
+unsafe fn suppress_stdout<F: FnOnce() -> R, R>(f: F) -> R {
+    use std::os::unix::io::AsRawFd;
+    let stdout_fd = io::stdout().as_raw_fd();
+    let stderr_fd = io::stderr().as_raw_fd();
+
+    let dev_null = File::create("/dev/null").unwrap();
+    let null_fd = dev_null.as_raw_fd();
+
+    let saved_stdout = libc::dup(stdout_fd);
+    let saved_stderr = libc::dup(stderr_fd);
+
+    libc::dup2(null_fd, stdout_fd);
+    libc::dup2(null_fd, stderr_fd);
+
+    let result = f();
+
+    libc::dup2(saved_stdout, stdout_fd);
+    libc::dup2(saved_stderr, stderr_fd);
+    libc::close(saved_stdout);
+    libc::close(saved_stderr);
+
+    result
+}
+
+#[cfg(windows)]
+unsafe fn suppress_stdout<F: FnOnce() -> R, R>(f: F) -> R {
+    use std::os::windows::io::AsRawHandle;
+    use winapi::um::fileapi::CreateFileW;
+    use winapi::um::processenv::{GetStdHandle, SetStdHandle};
+    use winapi::um::winbase::{STD_ERROR_HANDLE, STD_OUTPUT_HANDLE};
+    use winapi::um::winnt::{
+        FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_WRITE, FILE_SHARE_WRITE, OPEN_EXISTING,
+    };
+
+    fn wide_null() -> Vec<u16> {
+        "NUL".encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    let stdout_handle = GetStdHandle(STD_OUTPUT_HANDLE);
+    let stderr_handle = GetStdHandle(STD_ERROR_HANDLE);
+
+    let nul_handle = CreateFileW(
+        wide_null().as_ptr(),
+        FILE_GENERIC_WRITE,
+        FILE_SHARE_WRITE,
+        std::ptr::null_mut(),
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        std::ptr::null_mut(),
+    );
+
+    SetStdHandle(STD_OUTPUT_HANDLE, nul_handle);
+    SetStdHandle(STD_ERROR_HANDLE, nul_handle);
+
+    let result = f();
+
+    SetStdHandle(STD_OUTPUT_HANDLE, stdout_handle);
+    SetStdHandle(STD_ERROR_HANDLE, stderr_handle);
+
+    result
+}
+
 fn error_exit(error_message: &str) {
     eprintln!("{}", json::stringify(object! { error: error_message }));
     exit(1);
@@ -118,7 +274,7 @@ fn main() {
         }
     };
 
-    let info = match unsafe { inspect_vst3_plugin(&binary_path) } {
+    let info = match unsafe { suppress_stdout(|| inspect_vst3_plugin(&binary_path)) } {
         Ok(info) => info,
         Err(e) => {
             error_exit("loading plugin failed");
@@ -142,22 +298,10 @@ fn main() {
         }
     };
 
-    let audioModule = match info
-        .classes
-        .iter()
-        .find(|c| c.category.contains("Audio Module"))//Component
-    {
-        Some(value) => value,
-        None => {
-            error_exit("audio module not found");
-            exit(1);
-        }
-    };
-
     let mut output = object! {
-        name: audioModule.name.to_string(),
+        name: info.name,
         vendor: info.factory_info.vendor,
-        version: audioModule.version.to_string(),
+        version: info.version,
         countParameters: controller_info.parameter_count,
         countInputs: component_info.bus_count_inputs,
         countOutputs: component_info.bus_count_outputs,
@@ -166,7 +310,9 @@ fn main() {
     };
 
     for (i, param) in controller_info.parameters.iter().enumerate() {
-        if param.title != "" && !param.title.to_lowercase().contains("midi") {
+        let title_lower = param.title.to_lowercase();
+        let forbidden = ["midi", "cc "];
+        if !title_lower.is_empty() && !forbidden.iter().any(|f| title_lower.contains(f)) {
             output["parameters"].push(object! {
               id: param.id,
               index: i,
@@ -176,7 +322,7 @@ fn main() {
         }
     }
 
-    println!("{}", json::stringify(output));
+    println!("{}\n\n", json::stringify(output));
 }
 
 // Helper function to find the correct binary path in VST3 bundle
@@ -295,11 +441,11 @@ unsafe fn inspect_vst3_plugin(path: &str) -> Result<PluginInfo, String> {
     // 3. Find the Audio Module class
     let audio_class = classes
         .iter()
-        .find(|c| c.category.contains("Audio Module"))
+        .find(|c| c.category.contains("Audio Module Class"))
         .ok_or("No Audio Module class found")?;
 
     // 4. Create and properly initialize the plugin using the official SDK pattern
-    let (component_info, controller_info) =
+    let (component_info, controller_info, name, version) =
         properly_initialize_plugin(&factory, &audio_class.class_id)?;
 
     Ok(PluginInfo {
@@ -307,59 +453,86 @@ unsafe fn inspect_vst3_plugin(path: &str) -> Result<PluginInfo, String> {
         classes,
         component_info,
         controller_info,
+        name,
+        version,
     })
 }
 
 unsafe fn properly_initialize_plugin(
     factory: &ComPtr<IPluginFactory>,
     _class_id_str: &str,
-) -> Result<(Option<ComponentInfo>, Option<ControllerInfo>), String> {
+) -> Result<
+    (
+        Option<ComponentInfo>,
+        Option<ControllerInfo>,
+        String,
+        String,
+    ),
+    String,
+> {
     // Find the Audio Module class (same as in our detection logic)
-    let class_count = factory.countClasses();
+    let num_classes = factory.countClasses();
+    let mut component_ptr: *mut IComponent = ptr::null_mut();
+    let mut plugin_name = String::new();
+    let mut plugin_version = String::new();
     let mut audio_class_id = None;
 
-    for i in 0..class_count {
+    for i in 0..num_classes {
         let mut class_info = std::mem::zeroed();
         if factory.getClassInfo(i, &mut class_info) == vst3::Steinberg::kResultOk {
             let category = c_str_to_string(&class_info.category);
-            if category.contains("Audio Module") {
+
+            if category.contains("Audio Module Class") {
+                plugin_name = c_str_to_string(&class_info.name);
+                // Version is not available in PClassInfo
+                plugin_version = "1.0.0".to_string();
                 audio_class_id = Some(class_info.cid);
-                break;
+
+                eprintln!("Found audio module: {}", plugin_name);
+
+                // Create component
+                let result = factory.createInstance(
+                    class_info.cid.as_ptr() as *const i8,
+                    IComponent::IID.as_ptr() as *const i8,
+                    &mut component_ptr as *mut _ as *mut _,
+                );
+
+                if result == vst3::Steinberg::kResultOk && !component_ptr.is_null() {
+                    break;
+                }
             }
         }
     }
-
     let audio_class_id = audio_class_id.ok_or("No Audio Module class found")?;
 
-    // Create component first
-    let mut component_ptr: *mut IComponent = ptr::null_mut();
-    let result = factory.createInstance(
-        audio_class_id.as_ptr(),
-        IComponent::IID.as_ptr() as *const i8,
-        &mut component_ptr as *mut _ as *mut _,
-    );
-
-    if result != vst3::Steinberg::kResultOk || component_ptr.is_null() {
+    if component_ptr.is_null() {
         return Err("Failed to create component".to_string());
     }
 
-    let component =
-        ComPtr::<IComponent>::from_raw(component_ptr).ok_or("Failed to wrap component")?;
+    let component = match ComPtr::<IComponent>::from_raw(component_ptr) {
+        Some(c) => c,
+        None => return Err("Failed to wrap component".to_string()),
+    };
 
-    let init_result = component.initialize(ptr::null_mut());
-
+    // Initialize component
+    let host_ptr = HostApplication::new();
+    let init_result = component.initialize(host_ptr);
     if init_result != vst3::Steinberg::kResultOk {
-        return Err("Failed to initialize component".to_string());
+        return Err(format!(
+            "Failed to initialize component: {:#x}",
+            init_result
+        ));
     }
 
     // Get controller (same logic as in our working detection)
-    let controller = match get_or_create_controller(&component, &factory, &audio_class_id)? {
-        Some(ctrl) => ctrl,
-        None => {
-            component.terminate();
-            return Err("No controller available".to_string());
-        }
-    };
+    let controller =
+        match unsafe { get_or_create_controller(&component, &factory, &audio_class_id) }? {
+            Some(ctrl) => ctrl,
+            None => {
+                component.terminate();
+                return Err("No controller available".to_string());
+            }
+        };
 
     // Step 3: Get Component Info
     let component_info = get_component_info(&component)?;
@@ -375,7 +548,12 @@ unsafe fn properly_initialize_plugin(
     component.terminate();
     controller.terminate();
 
-    Ok((Some(component_info), Some(controller_info)))
+    Ok((
+        Some(component_info),
+        Some(controller_info),
+        plugin_name,
+        plugin_version,
+    ))
 }
 
 unsafe fn get_or_create_controller(
