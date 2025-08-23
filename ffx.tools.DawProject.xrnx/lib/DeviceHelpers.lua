@@ -191,10 +191,12 @@ function DeviceHelpers:readPluginInfo(device)
 
   -- plugins might output to the console by themselves
   local startOffset = string.find(toolOutput, "{\"")
-  if (startOffset == nil) then
+  local endOffset = string.find(toolOutput, "\"}\n\n")
+
+  if (startOffset == nil or endOffset == nil) then
     return nil
   end
-  toolOutput = string.sub(toolOutput, startOffset)
+  toolOutput = string.sub(toolOutput, startOffset, endOffset + 2)
 
   pcall(function()
     pluginInfo = json.decode(toolOutput)

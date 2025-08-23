@@ -9,6 +9,7 @@ repository = "https://github.com/Jurek-Raben/DawProject-Tool"
 json = "0.12.4"
 vst3 = "0.1.2"
 libloading = "0.8.8"
+libc = "0.2.175"
 
 # Platform-specific dependencies
 [target.'cfg(target_os = "macos")'.dependencies]
