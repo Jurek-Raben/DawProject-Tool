@@ -14,13 +14,14 @@ Sadly it is not possible currently to provide a complete tool without a lot of w
 - Loads fine into Bitwig 5.3+ (all) and Studio One 7.2+ (VST3 completely, AU without automation)
 - You can also convert any sample instrument to Redux VST3 via context menu
 - AudioUnit preset and automation export (not working in S1, due to bugs in S1)
-- VST3 preset export
+- VST2 preset and automation export (not working in S1, due to bugs in S1)
+- VST3 preset and automation export
 
 #### Partly working so far
 
 - Workaround VST2 preset export (via included VST2 helper tool)
 - Workaround VST2 automation (via included VST2 helper tool)
-- Workaround VST3 fx automation (via included VST3 helper tool)
+- Workaround VST3 automation (via included VST3 helper tool)
 
 #### What’s not working / not implemented yet
 
@@ -56,7 +57,6 @@ The tool can use VST2/3 info tools to extract the missing plugin infos, which I 
 #### Manual workarounds
 
 - You can manipulate the generated dawproject data inside the "tmp" directory of the tool and then use the "Repack .dawproject" menu entry.
-- For some VST3 instrument automation (the helper tool isn't working for all instruments yet), you will have to figure out the parameter ids and fix it in the project.xml (Search for "Vst3Plugin" and then the "Parameters" node, in here the parameterID attributes). You can use another daw which exports dawproject, adding those parameters as automation first, and then look into that project.xml... Yes, cumbersome...
 
 ####
 
@@ -66,7 +66,7 @@ macOS and Linux users use the `./build_for_mac_linux.sh` script. Might need a ch
 
 You can also decide to build a bunch of binary vst-tools that I've lamely coded in Rust.
 
-These tools try to circumvent the current limitations of the Renoise API. The VST2 tool will give detailed infos for a given plugin path. If you want to use those via the tool settings, you will have to build these as first step with `./build_vst_tools.sh`.
+These tools try to circumvent the current limitations of the Renoise API. The VST2/VST3 tool will give detailed infos for a given plugin path. If you want to use those via the tool settings, you will have to build these as first step with `./build_vst_tools.sh`.
 
 The tools require Rust / cargo to be installed on the system.
 
