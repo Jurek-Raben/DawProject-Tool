@@ -44,6 +44,12 @@ cargo b -r  --target=x86_64-apple-darwin --target=aarch64-apple-darwin
 cp ./target/x86_64-apple-darwin/release/vst3info-tool ../ffx.tools.DawProject.xrnx/bin/vst3info-tool-mac-x64
 cp ./target/aarch64-apple-darwin/release/vst3info-tool ../ffx.tools.DawProject.xrnx/bin/vst3info-tool-mac-arm
 
+cross build --release --target=x86_64-pc-windows-gnu
+cp ./target/x86_64-pc-windows-gnu/release/vst3info-tool.exe ../ffx.tools.DawProject.xrnx/bin/vst3info-tool-win.exe
+
+cross build --release --target=x86_64-unknown-linux-gnu
+cp ./target/x86_64-unknown-linux-gnu/release/vst3info-tool ../ffx.tools.DawProject.xrnx/bin/vst3info-tool-linux
+
 fi
 
 cd ..
