@@ -107,11 +107,30 @@ function DeviceHelpers:extractAUDeviceParameterIDs(deviceID)
   return pluginInfo
 end
 
+function DeviceHelpers:isPluginBridged(device)
+  local pluginInfos = Song:instrument(1).plugin_properties.available_plugin_infos
+
+  pcall(function()
+    if device.display_name then -- is a dsp
+      pluginInfos = Song:track(1).available_device_infos
+    end
+  end)
+
+  for i = 1, #pluginInfos do
+    if (pluginInfos[i].path == device.device_path) then
+      return pluginInfos[i].is_bridged
+    end
+  end
+
+  print('error: no plugin info found for', device.device_path)
+  return false
+end
+
 function DeviceHelpers:readPluginInfo(device)
   local pluginPath = device.device_path
   local pluginInfo = self.cache:get(pluginPath)
   local filePath = nil
-  local isBridged = nil
+  local isBridged = DeviceHelpers:isPluginBridged(device)
   local dbPath = renoise.tool().bundle_path:match("(.*Renoise/V" .. renoise.RENOISE_VERSION .. "/)")
   local vstToolPath = nil
   local osString = Helpers:getShortOSString()
@@ -123,7 +142,7 @@ function DeviceHelpers:readPluginInfo(device)
   local _, pluginId = pluginPath:match("(.*/)(.*)")
 
   local dbPathAddon = jit.arch
-  if (jit.arch == 'x86_64' or jit.arch == 'amd64') then
+  if (jit.arch == 'x86_64' or jit.arch == 'amd64' or isBridged) then
     dbPathAddon = 'x64'
   end
 
@@ -145,14 +164,16 @@ function DeviceHelpers:readPluginInfo(device)
 
   local db, status, error = renoise.SQLite.open(dbPath, "ro")
   if (db == nil) then
+    print('error: Error while opening db', dbPath)
     return nil
   end
   if (error ~= nil) then
+    print('error: Error while opening db', dbPath)
     db:close()
     return nil
   end
 
-  local sql = "SELECT LocalFilePath, IsBridged FROM CachedPlugins WHERE DocumentIdentifier = '" .. pluginId .. "';"
+  local sql = "SELECT LocalFilePath FROM CachedPlugins WHERE DocumentIdentifier = '" .. pluginId .. "';"
   local result = {}
   for a in db:rows(sql) do
     for _, v in ipairs(a) do
@@ -166,15 +187,14 @@ function DeviceHelpers:readPluginInfo(device)
     return nil
   end
 
-  isBridged = result[2]
   filePath = result[1]
 
   if (osString == 'mac') then
-    if (jit.arch == "arm64" and isBridged == 1 or (jit.arch == "x86_64" or jit.arch == "amd64") and isBridged == 0) then
+    if (jit.arch == "arm64" and isBridged == true or (jit.arch == "x86_64" or jit.arch == "amd64") and isBridged == false) then
       vstToolPath = vstToolPath .. '-x64'
-    elseif (jit.arch == "arm64" and isBridged == 0) then
+    elseif (jit.arch == "arm64" and isBridged == false) then
       vstToolPath = vstToolPath .. '-arm'
-    elseif ((jit.arch == "x86_64" or jit.arch == "amd64") and isBridged == 1) then
+    elseif ((jit.arch == "x86_64" or jit.arch == "amd64") and isBridged == true) then
       return nil
     end
   end
@@ -191,9 +211,10 @@ function DeviceHelpers:readPluginInfo(device)
 
   -- plugins might output to the console by themselves
   local startOffset = string.find(toolOutput, "{\"")
-  local endOffset = string.find(toolOutput, "\"}\n\n")
+  local endOffset = string.find(toolOutput, "\"}")
 
   if (startOffset == nil or endOffset == nil) then
+    print('error: Tool output offsets not found', toolOutput)
     return nil
   end
   toolOutput = string.sub(toolOutput, startOffset, endOffset + 2)
