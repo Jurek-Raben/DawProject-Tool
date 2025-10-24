@@ -77,7 +77,61 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
 
         usedTypes = NoteAbstraction:addTrackAutomation(automationEvents, position.track,
           pattern:track(position.track), lineOffset)
+
         if (yieldCallback ~= nil and seqIndex % 4 == 0) then yieldCallback() end
+      end
+
+      local fxColumn = pattern:track(position.track):line(position.line).effect_columns[1]
+
+      -- Midi control messages (CC)
+      if ('M0' == noteColumn.panning_string) and (noteColumn.instrument_value ~= renoise.PatternLine.EMPTY_INSTRUMENT) then
+        table.insert(automationEvents,
+          {
+            device = Song:instrument(noteColumn.instrument_value).plugin_properties.plugin_device,
+            deviceIndex = "i" .. noteColumn.instrument_value,
+            trackNum = position.track,
+            paramIndex = tonumber("0x" .. fxColumn.number_string, 16),
+            type = 'CC',
+            parameterName = 'CC #' .. fxColumn.number_string,
+            timestamp = (lineOffset + position.line - 1) * 256 + noteColumn.delay_value,
+            value = tonumber("0x" .. fxColumn.amount_string, 16) / 0x7f,
+            scaling = 1
+          }
+        )
+      end
+
+      -- Midi pitchbend messages
+      if ('M1' == noteColumn.panning_string) and (noteColumn.instrument_value ~= renoise.PatternLine.EMPTY_INSTRUMENT) then
+        table.insert(automationEvents,
+          {
+            device = Song:instrument(noteColumn.instrument_value).plugin_properties.plugin_device,
+            deviceIndex = "i" .. noteColumn.instrument_value,
+            trackNum = position.track,
+            paramIndex = 200000, -- fake index
+            type = 'PB',
+            parameterName = 'Pitchbend',
+            timestamp = (lineOffset + position.line - 1) * 256 + noteColumn.delay_value,
+            value = tonumber("0x" .. fxColumn.number_string .. fxColumn.amount_string, 16) / 0x7f7f,
+            scaling = 1
+          }
+        )
+      end
+
+      -- Channel aftertouch messages
+      if ('M3' == noteColumn.panning_string) and (noteColumn.instrument_value ~= renoise.PatternLine.EMPTY_INSTRUMENT) then
+        table.insert(automationEvents,
+          {
+            device = Song:instrument(noteColumn.instrument_value).plugin_properties.plugin_device,
+            deviceIndex = "i" .. noteColumn.instrument_value,
+            trackNum = position.track,
+            paramIndex = 200001, -- fake index
+            type = 'CP',
+            parameterName = 'Channel Pressure',
+            timestamp = (lineOffset + position.line - 1) * 256 + noteColumn.delay_value,
+            value = tonumber("0x" .. fxColumn.number_string .. fxColumn.amount_string, 16) / 0x7f,
+            scaling = 1
+          }
+        )
       end
 
       if noteColumn.is_empty then
@@ -256,7 +310,7 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
                 trackNum = trackNum,
                 paramIndex = _paramIndex,
                 type = _type,
-                parameter = parameter,
+                parameterName = parameter.name,
                 timestamp = (lineOffset + point.time - 1) * 256,
                 value = point.value,
                 scaling = point.scaling

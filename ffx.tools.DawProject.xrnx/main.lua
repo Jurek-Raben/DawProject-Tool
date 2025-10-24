@@ -206,6 +206,9 @@ function DawProject:mapExpressionType(automationEvent)
   if (automationEvent.type == 'CC') then
     return 'channelController'
   end
+  if (automationEvent.type == 'CP') then
+    return 'channelPressure'
+  end
 
   return nil
 end
@@ -230,7 +233,7 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
     if (automationsObj[trackNum][paramIndex] == nil) then
       automationsObj[trackNum][paramIndex] = {
         _attr = {
-          name = automationEvent.parameter.name,
+          name = automationEvent.parameterName,
           unit = "normalized"
         },
         Target = {
@@ -267,7 +270,7 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
           if (foundParamObj) then
             print('found param name', foundParamObj['title'])
             print('found param id', foundParamObj['id'])
-            print('matching param name', automationEvent.parameter.name)
+            print('matching param name', automationEvent.parameterName)
             parameterID = foundParamObj['id']
           end
         end
@@ -287,20 +290,20 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
             .paramIndex)
           if (foundParamObj) then
             print('found param id', foundParamObj['id'])
-            print('matching param name', automationEvent.parameter.name)
+            print('matching param name', automationEvent.parameterName)
             parameterID = foundParamObj['id']
           end
         end
       end
 
-      print('linked param for instr ' .. automationEvent.device.name, automationEvent.parameter.name,
+      print('linked param for instr ' .. automationEvent.device.name, automationEvent.parameterName,
         automationEvent.type, automationEvent.value,
         parameterIdPrefix,
         paramIndex)
       parametersObj[parameterIdPrefix][paramIndex] = {
         _attr = {
           id = parameterIdPrefix .. '-' .. paramIndex,
-          name = automationEvent.parameter.name,
+          name = automationEvent.parameterName,
           parameterID = parameterID,
           unit = "normalized",
           min = "0",
