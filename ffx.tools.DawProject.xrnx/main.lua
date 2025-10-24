@@ -190,10 +190,6 @@ function DawProject:generateNoteEventsDataForXML(songEvents, automationPoints)
         rel = noteEvent.releaseVelocity
       }
     }
-
-    if noteEvent.duration > noteEvent.patternDuration then
-      clips[noteEvent.seqNum]._attr.duration = Helpers:round(noteEvent.duration * scaleFactor, 6)
-    end
   end
 
   return lanesObj
