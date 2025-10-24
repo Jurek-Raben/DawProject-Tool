@@ -16,6 +16,7 @@ Sadly it is not possible currently to provide a complete tool without a lot of w
 - AudioUnit preset and automation export (not working in S1, due to bugs in S1)
 - VST2 preset and automation export (not working in S1, due to bugs in S1)
 - VST3 preset and automation export
+- MIDI pattern automation, pitchbend, CC and aftertouch
 
 #### Partly working so far
 
