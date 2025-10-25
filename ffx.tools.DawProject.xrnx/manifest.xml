@@ -2,7 +2,7 @@
 <RenoiseScriptingTool doc_version="0">
   <ApiVersion>6.2</ApiVersion>
   <Id>ffx.tools.DawProject</Id>
-  <Version>0.1.10</Version>
+  <Version>0.1.12</Version>
   <Author>Jurek Raben</Author>
   <Name>Daw Project Support</Name>
   <Category>Tools</Category>
