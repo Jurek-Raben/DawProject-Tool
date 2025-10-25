@@ -205,6 +205,9 @@ function DawProject:mapExpressionType(automationEvent)
   if (automationEvent.type == 'CP') then
     return 'channelPressure'
   end
+  if (automationEvent.type == 'Prg') then
+    return 'programChange'
+  end
 
   return nil
 end
