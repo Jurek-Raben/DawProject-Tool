@@ -38,6 +38,8 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
 
   local activeNotes = {}
   local lastVelocities = {}
+  local lastPointValues = {}
+
   local noteKey = nil
   local patternIndex = nil
   local patternLines = nil
@@ -75,13 +77,13 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
           checkForNoteEvent(noteKey)
         end
 
-        usedTypes = NoteAbstraction:addTrackAutomation(automationEvents, position.track,
-          pattern:track(position.track), lineOffset)
+        usedTypes = NoteAbstraction:addGraphicalTrackAutomation(automationEvents, position.track,
+          pattern:track(position.track), lineOffset, lastPointValues)
 
         if (yieldCallback ~= nil and seqIndex % 4 == 0) then yieldCallback() end
       end
 
-      NoteAbstraction:addPatternAutomation(automationEvents, pattern, position, noteColumn, lineOffset, usedTypes)
+      NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, position, noteColumn, lineOffset, usedTypes)
 
       if noteColumn.is_empty then
         goto continue
@@ -156,7 +158,7 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
   return { noteEvents = noteEvents, automationEvents = automationEvents }
 end
 
-function NoteAbstraction:addPatternAutomation(automationEvents, pattern, position, noteColumn, lineOffset, usedTypes)
+function NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, position, noteColumn, lineOffset, usedTypes)
   local fxColumn = pattern:track(position.track):line(position.line).effect_columns[1]
 
   -- Midi control messages (CC)
@@ -228,14 +230,15 @@ function NoteAbstraction:addPatternAutomation(automationEvents, pattern, positio
   end
 end
 
-function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternTrack, lineOffset)
+function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum, patternTrack, lineOffset,
+                                                     lastPointValues)
   local usedTypes = {}
   local track = Song:track(trackNum)
 
-  for y = 2, #track.devices do
-    local device = track:device(y)
+  for deviceIndex = 2, #track.devices do
+    local device = track:device(deviceIndex)
     local targetDevice
-    local deviceIndexString = tostring(y)
+    local deviceIndexString = tostring(deviceIndex)
 
     local getIndex = function(paramNum)
       return paramNum - 1
@@ -269,7 +272,7 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
         deviceIndexString = "i" .. targetInstrumentNum
 
         getIndex = function(paramNum)
-          local cacheKey = trackNum .. y .. '_' .. paramNum
+          local cacheKey = trackNum .. deviceIndex .. '_' .. paramNum
           if (self.automationCache:get(cacheKey)) then
             return self.automationCache:get(cacheKey)
           end
@@ -319,24 +322,49 @@ function NoteAbstraction:addTrackAutomation(automationEvents, trackNum, patternT
           goto continue2
         end
 
+
         local _type = getType(paramIndex)
         local _paramIndex = getIndex(paramIndex)
+        local lastPointIndex = trackNum .. deviceIndex .. _paramIndex
 
         if (_type ~= nil) then
-          for _, point in ipairs(automation.points) do
-            table.insert(automationEvents,
-              {
-                device = targetDevice,
-                deviceIndex = deviceIndexString,
-                trackNum = trackNum,
-                paramIndex = _paramIndex,
-                type = _type,
-                parameterName = parameter.name,
-                timestamp = (lineOffset + point.time - 1) * 256,
-                value = point.value,
-                scaling = point.scaling
-              }
-            )
+          for i, point in ipairs(automation.points) do
+            local _timestamp = (lineOffset + point.time - 1) * 256
+
+            if (lastPointValues[lastPointIndex] ~= nil and _timestamp >= 1 and automation.playmode == renoise.PatternTrackAutomation.PLAYMODE_POINTS) then
+              table.insert(automationEvents,
+                {
+                  device = targetDevice,
+                  deviceIndex = deviceIndexString,
+                  trackNum = trackNum,
+                  paramIndex = _paramIndex,
+                  type = _type,
+                  parameterName = parameter.name,
+                  timestamp = _timestamp - 1,
+                  value = lastPointValues[lastPointIndex],
+                  scaling = point.scaling
+                }
+              )
+            end
+
+            local newPointValue = math.floor(point.value * 100000 + 0.5) / 100000
+            if (lastPointValues[lastPointIndex] ~= newPointValue) then
+              lastPointValues[lastPointIndex] = newPointValue
+
+              table.insert(automationEvents,
+                {
+                  device = targetDevice,
+                  deviceIndex = deviceIndexString,
+                  trackNum = trackNum,
+                  paramIndex = _paramIndex,
+                  type = _type,
+                  parameterName = parameter.name,
+                  timestamp = _timestamp,
+                  value = newPointValue,
+                  scaling = point.scaling
+                }
+              )
+            end
 
             if (usedTypes[_type] == nil) then
               usedTypes[_type] = {}
