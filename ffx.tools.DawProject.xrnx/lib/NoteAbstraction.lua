@@ -56,17 +56,27 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
     for position, noteColumn in Song.pattern_iterator:note_columns_in_pattern(patternIndex) do
       noteKey = position.column .. "_" .. position.track
 
-      local checkForNoteEvent = function(_noteKey)
+      local checkForNoteOffEvent = function(_noteKey)
         -- insert at note-off
-        local noteOn = activeNotes[_noteKey]
-        if noteOn then
-          noteOn.lineDuration = (lineOffset + position.line - 1) - noteOn.absLineNum
-          noteOn.duration = ((lineOffset + position.line - 1) * 256 + noteColumn.delay_value) -
-              noteOn.timestamp
-          noteOn.releaseVelocity = noteColumn.volume_value < 128 and (noteColumn.volume_value / 127) or nil
-          table.insert(noteEvents, noteOn)
+        local noteOnExisting = activeNotes[_noteKey]
+        if noteOnExisting then
+          noteOnExisting.lineDuration = (lineOffset + position.line - 1) - noteOnExisting.absLineNum
+          noteOnExisting.duration = ((lineOffset + position.line - 1) * 256 + noteColumn.delay_value) -
+              noteOnExisting.timestamp
+          noteOnExisting.releaseVelocity = noteColumn.volume_value < 128 and (noteColumn.volume_value / 127) or nil
+          table.insert(noteEvents, noteOnExisting)
           -- remove note-on
           activeNotes[_noteKey] = nil
+        end
+      end
+
+      local checkForPressureAutomationEvent = function(_noteKey)
+        local noteOnExisting = activeNotes[_noteKey]
+        if (noteOnExisting and noteColumn.note_value == renoise.PatternLine.EMPTY_NOTE and noteColumn.volume_value ~= renoise.PatternLine.EMPTY_VOLUME) then
+          table.insert(noteOnExisting.pressureTimeline, {
+            value = noteColumn.volume_value / 127,
+            timestamp = (lineOffset + position.line - 1) * 256 + noteColumn.delay_value - noteOnExisting.timestamp,
+          })
         end
       end
 
@@ -74,7 +84,7 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
         local _seqIsMuted = Song.sequencer:track_sequence_slot_is_muted(position.track, seqIndex)
         if (seqIsMuted[position.track] ~= _seqIsMuted) then
           seqIsMuted[position.track] = _seqIsMuted
-          checkForNoteEvent(noteKey)
+          checkForNoteOffEvent(noteKey)
         end
 
         usedTypes = NoteAbstraction:addGraphicalTrackAutomation(automationEvents, position.track,
@@ -85,12 +95,14 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
 
       NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, position, noteColumn, lineOffset, usedTypes)
 
+      checkForPressureAutomationEvent(noteKey)
+
       if noteColumn.is_empty then
         goto continue
       end
 
       if noteColumn.note_value >= 0 and noteColumn.note_value < renoise.PatternLine.NOTE_OFF then
-        checkForNoteEvent(noteKey)
+        checkForNoteOffEvent(noteKey)
 
         -- prepare at note-on
         activeNotes[noteKey] = {
@@ -112,12 +124,13 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
           patternRelTimestamp = (position.line - 1) * 256 + noteColumn.delay_value,
           patternTimestamp = lineOffset * 256,
           enabled = not seqIsMuted[position.track],
+          pressureTimeline = {}
         }
         if (noteColumn.volume_value < 128) then
           lastVelocities[noteKey] = noteColumn.volume_value
         end
       elseif noteColumn.note_value == renoise.PatternLine.NOTE_OFF then
-        checkForNoteEvent(noteKey)
+        checkForNoteOffEvent(noteKey)
       end
 
       ::continue::

@@ -3,7 +3,7 @@ end
 --------------------------------------------------------------------------------
 -- Daw Project
 -- by Jurek Raben
--- v0.1.12
+-- v0.1.13
 --
 -- Licensed under CC Attribution-NonCommercial-ShareAlike 4.0 International
 -- Info here: https://creativecommons.org/licenses/by-nc-sa/4.0/
@@ -120,6 +120,21 @@ function DawProject:generateMarkersDataForXML()
   return nil
 end
 
+function DawProject:generateNotePressureEventsDataForXML(pressureTimeline)
+  local scaleFactor = SCALE_FACTOR / Song.transport.lpb
+  local points = {}
+  for _, pressureEntry in ipairs(pressureTimeline) do
+    table.insert(points, {
+      _attr = {
+        value = Helpers:round(pressureEntry.value, 6),
+        interpolation = 'linear',
+        time = Helpers:round(pressureEntry.timestamp * scaleFactor, 6)
+      }
+    })
+  end
+  return points
+end
+
 function DawProject:generateNoteEventsDataForXML(songEvents, automationPoints)
   local noteEvents = songEvents.noteEvents
 
@@ -187,8 +202,21 @@ function DawProject:generateNoteEventsDataForXML(songEvents, automationPoints)
         channel = 0,
         key = noteEvent.key,
         vel = noteEvent.velocity,
-        rel = noteEvent.releaseVelocity
-      }
+        rel = noteEvent.releaseVelocity,
+      },
+      Points = #noteEvent.pressureTimeline > 0 and {
+        Target = {
+          _attr = {
+            expression = "pressure"
+          }
+        },
+        RealPoint = self:generateNotePressureEventsDataForXML(noteEvent.pressureTimeline),
+        _attr = {
+          id = 'polypressure' .. noteEvent.trackNum .. '-' .. noteEvent.seqNum .. '-' .. #notes,
+          unit = 'linear'
+        }
+      } or nil
+
     }
   end
 

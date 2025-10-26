@@ -1,6 +1,6 @@
 -------------------------------------------------------------------------------
 -- Device Substitution Helpers, for replacing Renoise internal fx
--- with common freely avaialble plugins
+-- with common, freely avaialble plugins
 -- by Jurek Raben
 --
 -- Licensed under CC Attribution-NonCommercial-ShareAlike 4.0 International

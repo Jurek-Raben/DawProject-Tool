@@ -1,8 +1,8 @@
 # Daw Project Export Tool for Renoise 3.5+ (early state)
 
-A very early state, kind of a scaffolding of a daw project export tool (and later import maybe) for the Renoise DAW, starting from version 3.5 and upwards.
+A early state daw project export tool (and later import maybe) for the Renoise DAW, starting from version 3.5 and upwards.
 
-Sadly it is not possible currently to provide a complete tool without a lot of workarounds, due to API limitations. These would be easy to add, because everything already is implemented under the hood, just not made available in the API. Please read my suggestions for the Renoise API below.
+Please also read my suggestions for the Renoise API below, the tool requires binary helper tools so far which provide required information that currently is not avaialble thru the Renoise API.
 
 #### Working so far
 
@@ -11,28 +11,35 @@ Sadly it is not possible currently to provide a complete tool without a lot of w
 - Plugin automation data
 - Section naming
 - Track coloring and naming
-- Loads fine into Bitwig 5.3+ (all) and Studio One 7.2+ (VST3 completely, AU without automation)
+- Loads fine into Bitwig 5.3+/6 (all) and Studio One 7.2+ (VST3 completely, AU without automation)
 - You can also convert any sample instrument to Redux VST3 via context menu
 - AudioUnit preset and automation export (not working in S1, due to bugs in S1)
 - VST2 preset and automation export (not working in S1, due to bugs in S1)
 - VST3 preset and automation export
-- MIDI pattern automation, pitchbend, CC and aftertouch
+- MIDI pattern automation, pitchbend, CC, aftertouch and program change
+- Polyphonic aftertouch
 
-#### Partly working so far
+#### Workarounds thru helper tools
 
-- Workaround VST2 preset export (via included VST2 helper tool)
-- Workaround VST2 automation (via included VST2 helper tool)
-- Workaround VST3 automation (via included VST3 helper tool)
+- VST2 preset export (included VST2 helper tool provides missing plugin id)
+- VST2 automation (included VST2 helper tool provides missing plugin id)
+- VST3 automation mapping (included VST3 helper tool provides parameter ids)
+- AU preset export (plist util converts preset file)
+- AU automation mapping (auval provides missing parameter ids)
 
-#### What’s not working / not implemented yet
+#### Not yet working, but planned
 
 - Master track automation conversion
-- Any kind of pattern hex automation conversion
 - Redux macro device to instrument device automation conversion
-- polyphonic aftertouch
 - No idea why VST3 preset loading fails in Cubase 14+. Might be the preset data itself. As a workaround, load the exported dawproject into S1 and then again export as dawproject. Bitwig exports also fail to load in Cubase. S1 uses an uncompressed zip type.
 - VST2 preset loading and mapping is buggy in Studio One currently and needs to be fixed.
 - Studio One will incorrectly set/interpret the parameter ids for AudioUnits. Therefore automation for AudioUnits currently is lost in Studio One.
+
+#### How to use / install
+
+This tool only has been tested on macOS only so far. It currently requires the included binary tools to be executable. Most certainly you will have to disable SIP (system integrity protection) under macOS, since the binaries are not approved by the all controlling Apple Corp.
+
+The VST3 helper tool is known to not fully work on Windows. You will have to try yourself on Windows and Linux, but the tools are also included for these OSes.
 
 #### This can't work using API only, due to the API limitations
 
@@ -51,13 +58,13 @@ A song has to fulfill the following requirements for a working export:
 - Only one instrument per track! Use [Fladd's track splitter tool](https://www.renoise.com/tools/split-into-separate-tracks)!
 - The Instr. Automation Device has to be placed onto the track where the target instrument is playing.
 
-#### Automatic workarounds
+#### Helper tools
 
-The tool can use VST2/3 info tools to extract the missing plugin infos, which I coded in Rust. There are pre-built binaries included in the `/bin` sub directory, pre-built for macOS (arm/intel ub2), windows x86_64, linux x86_64.
+The tool can use VST2/3 info tools to extract the missing plugin infos, which I coded in Rust. There are pre-built binaries included in the `/bin` sub directory, pre-built for macOS (arm/intel ub2), windows x86_64, linux x86_64. Most likely you will need to disable SIP under macOS to make these tools startable, because these are not Apple aprroved in any way.
 
 #### Manual workarounds
 
-- You can manipulate the generated dawproject data inside the "tmp" directory of the tool and then use the "Repack .dawproject" menu entry.
+- You can manipulate the generated dawproject data inside the "tmp" directory of the tool directory and then use the "Repack .dawproject" menu entry.
 
 ####
 
@@ -65,7 +72,7 @@ The tool can use VST2/3 info tools to extract the missing plugin infos, which I 
 
 macOS and Linux users use the `./build_for_mac_linux.sh` script. Might need a chmod +x first. Windows users can test the same script, which should work in Windows 11 at least.
 
-You can also decide to build a bunch of binary vst-tools that I've lamely coded in Rust.
+You can also decide to build the binary vst-tools by yourself.
 
 These tools try to circumvent the current limitations of the Renoise API. The VST2/VST3 tool will give detailed infos for a given plugin path. If you want to use those via the tool settings, you will have to build these as first step with `./build_vst_tools.sh`.
 
@@ -83,6 +90,12 @@ I've also tried to make the source code nicely readable. You know, this is impor
 
 > `renoise.DeviceParameter.plugin_parameter_id` - int, unique VST3 parameter id provided by the plugin, is a simple index for VST2 (should be avaialable for AudioUnit, too)
 
+> `renoise.AudioDevice.unique_id` - Just as "Unique ID" in the info tooltip. Renoise does not use it for VST2, instead it uses the plugin filename. But the actual ID is needed for the export.
+
+> `renoise.InstrumentPluginDevice.unique_id` - Just as "Unique ID" in the info tooltip. Renoise does not use it for VST2, instead it uses the plugin filename. But the actual ID is needed for the export.
+
+> `renoise.AudioDevice.active_preset_data["LinkedInstrument"]` - Also contains `LinkedInstrument` node for Instr. Automation Device
+
 > `renoise.AudioDevice:export_active_preset(file_path)` - saves the currently selected preset in plugin specific format, that is .vstpreset for VST3, .fxp for VST2, .aupreset for AudioUnit. Just as "export preset..."
 
 > `renoise.InstrumentPluginDevice:export_active_preset(file_path)` - saves the currently selected preset in plugin specific format, that is .vstpreset for VST3, .fxp for VST2, .aupreset for AudioUnit. Just as "export preset..."
@@ -90,12 +103,6 @@ I've also tried to make the source code nicely readable. You know, this is impor
 > `renoise.AudioDevice:import_active_preset(file_path)` - imports a plugin type format specific preset into the active preset. Just as "import preset..."
 
 > `renoise.InstrumentPluginDevice:import_active_preset(file_path)` - imports a plugin type format specific preset into the active preset. Just as "import preset..."
-
-> `renoise.AudioDevice.unique_id` - Just as "Unique ID" in the info tooltip. Renoise does not use it for VST2, instead it uses the plugin filename. But the actual ID is needed for the export.
-
-> `renoise.InstrumentPluginDevice.unique_id` - Just as "Unique ID" in the info tooltip. Renoise does not use it for VST2, instead it uses the plugin filename. But the actual ID is needed for the export.
-
-> `renoise.AudioDevice.active_preset_data["LinkedInstrument"]` - Also contains `LinkedInstrument` node for Instr. Automation Device
 
 #### Uses the following libraries
 
