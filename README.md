@@ -1,6 +1,6 @@
 # Daw Project Export Tool for Renoise 3.5+ (early state)
 
-A early state daw project export tool (and later import maybe) for the Renoise DAW, starting from version 3.5 and upwards.
+An early state daw project export tool (and later import maybe) for the Renoise DAW, starting from version 3.5 and upwards.
 
 Please also read my suggestions for the Renoise API below, the tool requires binary helper tools so far which provide required information that currently is not avaialble thru the Renoise API.
 
@@ -29,17 +29,26 @@ Please also read my suggestions for the Renoise API below, the tool requires bin
 
 #### Not yet working, but planned
 
+- Pre-mixer device substitution (e.g. using Melda MUtility)
+- Gain device substitution (e.g. using Melda MUtility)
 - Master track automation conversion
 - Redux macro device to instrument device automation conversion
 - No idea why VST3 preset loading fails in Cubase 14+. Might be the preset data itself. As a workaround, load the exported dawproject into S1 and then again export as dawproject. Bitwig exports also fail to load in Cubase. S1 uses an uncompressed zip type.
 - VST2 preset loading and mapping is buggy in Studio One currently and needs to be fixed.
 - Studio One will incorrectly set/interpret the parameter ids for AudioUnits. Therefore automation for AudioUnits currently is lost in Studio One.
 
-#### How to use / install
+## How to use / install
 
-This tool only has been tested on macOS only so far. It currently requires the included binary tools to be executable. Most certainly you will have to disable SIP (system integrity protection) under macOS, since the binaries are not approved by the all controlling Apple Corp.
+This tool has been tested on macOS only so far. It currently requires the included binary tools to be executable. Most certainly you will have to disable SIP (system integrity protection) under macOS, since the binaries are not approved by the all-controlling Apple Corp.
 
 The VST3 helper tool is known to not fully work on Windows. You will have to try yourself on Windows and Linux, but the tools are also included for these OSes.
+
+#### Song requirements
+
+A song has to fulfill the following requirements for a working export:
+
+- Only one instrument per track! Use [Fladd's track splitter tool](https://www.renoise.com/tools/split-into-separate-tracks)!
+- The Instr. Automation Device has to be placed onto the track where the target instrument is playing.
 
 #### This can't work using API only, due to the API limitations
 
@@ -50,13 +59,6 @@ The VST3 helper tool is known to not fully work on Windows. You will have to try
 - You can’t determine the target device of the "Instr. Automation Device" via API currently. Has to be done through a complete track search instead (so the device has to sit on the track where the instrument plays). That `<LinkedInstrument>` node is missing in the active_preset_data for some reason, if you access it via API (not copy-paste).
 - An import can only work for the song structure, but not for preset transferring, due to the same API limitations.
 - AudioUnit parameter mapping is not possible, due to missing parameter ID infos.
-
-#### Song requirements
-
-A song has to fulfill the following requirements for a working export:
-
-- Only one instrument per track! Use [Fladd's track splitter tool](https://www.renoise.com/tools/split-into-separate-tracks)!
-- The Instr. Automation Device has to be placed onto the track where the target instrument is playing.
 
 #### Helper tools
 
