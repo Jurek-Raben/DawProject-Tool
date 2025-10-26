@@ -29,13 +29,12 @@ Please also read my suggestions for the Renoise API below, the tool requires bin
 
 #### Not yet working, but planned
 
-- Pre-mixer device substitution (e.g. using Melda MUtility)
-- Gain device substitution (e.g. using Melda MUtility)
 - Master track automation conversion
 - Redux macro device to instrument device automation conversion
 - No idea why VST3 preset loading fails in Cubase 14+. Might be the preset data itself. As a workaround, load the exported dawproject into S1 and then again export as dawproject. Bitwig exports also fail to load in Cubase. S1 uses an uncompressed zip type.
 - VST2 preset loading and mapping is buggy in Studio One currently and needs to be fixed.
 - Studio One will incorrectly set/interpret the parameter ids for AudioUnits. Therefore automation for AudioUnits currently is lost in Studio One.
+- Internal plugin substitution (mostly gain and panning), if there is a free VST3 with easily changeable preset data (not found yet).
 
 ## How to use / install
 
@@ -43,12 +42,26 @@ This tool has been tested on macOS only so far. It currently requires the includ
 
 The VST3 helper tool is known to not fully work on Windows. You will have to try yourself on Windows and Linux, but the tools are also included for these OSes.
 
-#### Song requirements
+## Song requirements
 
 A song has to fulfill the following requirements for a working export:
 
 - Only one instrument per track! Use [Fladd's track splitter tool](https://www.renoise.com/tools/split-into-separate-tracks)!
 - The Instr. Automation Device has to be placed onto the track where the target instrument is playing.
+- Don't use pre-mixer gain and panning, if you did, replace it with MUtility VST3 or TrackControl VST3
+- Don't use the gainer device, if you did, replace it with MUtility VST3 or TrackControl VST3
+
+## Disclaimer
+
+This Renoise tool currently **contains pre-built binaries of the VST info helper tools**. I built those on my macOS system using the recommended toolchains for Rust. If you are unsure you can build these yourself, or simply disable the usage in the tool's preferences. Building will require basic knowledge about how to setup a Rust dev environment. macOS should work best for that purpose.
+
+So I am not responsible for any damage these binaries could do to your system and your data. Use at your own risk! However, the binaries appear to behave normally here.
+
+## Download
+
+[Automatic release builds](https://github.com/Jurek-Raben/DawProject-Tool/releases)
+
+## Development insights
 
 #### This can't work using API only, due to the API limitations
 
@@ -68,9 +81,7 @@ The tool can use VST2/3 info tools to extract the missing plugin infos, which I 
 
 - You can manipulate the generated dawproject data inside the "tmp" directory of the tool directory and then use the "Repack .dawproject" menu entry.
 
-####
-
-## How to build from source
+#### How to build from source
 
 macOS and Linux users use the `./build_for_mac_linux.sh` script. Might need a chmod +x first. Windows users can test the same script, which should work in Windows 11 at least.
 
@@ -80,15 +91,7 @@ These tools try to circumvent the current limitations of the Renoise API. The VS
 
 The tools require Rust / cargo to be installed on the system.
 
-## Feel free to contribute
-
-Feel free to improve, try yourself, get in touch, and discuss it. Contact me, if you have questions or ideas.
-
-I have tested this tool so far for macOS. However, it should theoretically also work for Windows and maybe even Linux. Please report back.
-
-I've also tried to make the source code nicely readable. You know, this is important for team work, like proper function-, variable- and parameter-naming. The goal should be that a new developer can understand what's going on on-the-fly. What is the method or object actually doing?
-
-## Suggestions for the API
+#### Suggestions for the API
 
 > `renoise.DeviceParameter.plugin_parameter_id` - int, unique VST3 parameter id provided by the plugin, is a simple index for VST2 (should be avaialable for AudioUnit, too)
 
@@ -106,6 +109,18 @@ I've also tried to make the source code nicely readable. You know, this is impor
 
 > `renoise.InstrumentPluginDevice:import_active_preset(file_path)` - imports a plugin type format specific preset into the active preset. Just as "import preset..."
 
+#### Feel free to contribute
+
+Feel free to improve, try yourself, get in touch, and discuss it. Contact me, if you have questions or ideas.
+
+I have tested this tool so far for macOS. However, it should theoretically also work for Windows and maybe even Linux. Please report back.
+
+I've also tried to make the source code nicely readable. You know, this is important for team work, like proper function-, variable- and parameter-naming. The goal should be that a new developer can understand what's going on on-the-fly. What is the method or object actually doing?
+
+#### Source code
+
+https://github.com/Jurek-Raben/DawProject-Tool
+
 #### Uses the following libraries
 
 JSON lua by RXI
@@ -121,15 +136,3 @@ Also FancyStatus and ProcessSlicer.
 Licensed under CC Attribution-NonCommercial-ShareAlike 4.0 International - https://creativecommons.org/licenses/by-nc-sa/4.0/
 
 Can be changed.
-
-## Disclaimer
-
-This Renoise tool currently **contains pre-built binaries of the VST info helper tools**. I built those on my macOS system using the recommended toolchains for Rust. If you are unsure you can build these yourself, or simply disable the usage in the tool's preferences. Building will require basic knowledge about how to setup a Rust dev environment. macOS should work best for that purpose.
-
-So I am not responsible for any damage these binaries could do to your system and your data. **Use at your own risk!**
-
-However, the binaries appear to behave normally here ;)
-
-## Download
-
-[Automatic release builds](https://github.com/Jurek-Raben/DawProject-Tool/releases)
