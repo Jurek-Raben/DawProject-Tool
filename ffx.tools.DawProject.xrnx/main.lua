@@ -344,7 +344,7 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
       _attr = {
         time = Helpers:round(automationEvent.timestamp * scaleFactor, 6),
         value = Helpers:round(automationEvent.value, 6),
-        interpolation = 'linear'
+        interpolation = automationEvent.interpolation
 
       }
     }

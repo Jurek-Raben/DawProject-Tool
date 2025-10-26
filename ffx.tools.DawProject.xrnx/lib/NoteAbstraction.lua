@@ -186,6 +186,7 @@ function NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, po
         parameterName = 'CC #' .. fxColumn.number_string,
         timestamp = (lineOffset + position.line - 1) * 256 + noteColumn.delay_value,
         value = tonumber("0x" .. fxColumn.amount_string, 16) / 0x7f,
+        interpolation = 'linear',
         scaling = 1
       }
     )
@@ -203,6 +204,7 @@ function NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, po
         parameterName = 'Pitchbend',
         timestamp = (lineOffset + position.line - 1) * 256 + noteColumn.delay_value,
         value = tonumber("0x" .. fxColumn.number_string .. fxColumn.amount_string, 16) / 0x7f7f,
+        interpolation = 'linear',
         scaling = 1
       }
     )
@@ -220,6 +222,7 @@ function NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, po
         parameterName = 'Channel Pressure',
         timestamp = (lineOffset + position.line - 1) * 256 + noteColumn.delay_value,
         value = tonumber("0x" .. fxColumn.number_string .. fxColumn.amount_string, 16) / 0x7f,
+        interpolation = 'linear',
         scaling = 1
       }
     )
@@ -237,6 +240,7 @@ function NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, po
         parameterName = 'Program Change',
         timestamp = (lineOffset + position.line - 1) * 256 + noteColumn.delay_value,
         value = tonumber("0x" .. fxColumn.number_string .. fxColumn.amount_string, 16) / 0x7f,
+        interpolation = 'linear',
         scaling = 1
       }
     )
@@ -335,35 +339,14 @@ function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum,
           goto continue2
         end
 
-
         local _type = getType(paramIndex)
         local _paramIndex = getIndex(paramIndex)
         local lastPointIndex = trackNum .. deviceIndex .. _paramIndex
 
         if (_type ~= nil) then
-          for i, point in ipairs(automation.points) do
-            local _timestamp = (lineOffset + point.time - 1) * 256
-
-            if (lastPointValues[lastPointIndex] ~= nil and _timestamp >= 1 and automation.playmode == renoise.PatternTrackAutomation.PLAYMODE_POINTS) then
-              table.insert(automationEvents,
-                {
-                  device = targetDevice,
-                  deviceIndex = deviceIndexString,
-                  trackNum = trackNum,
-                  paramIndex = _paramIndex,
-                  type = _type,
-                  parameterName = parameter.name,
-                  timestamp = _timestamp - 1,
-                  value = lastPointValues[lastPointIndex],
-                  scaling = point.scaling
-                }
-              )
-            end
-
+          for _, point in ipairs(automation.points) do
             local newPointValue = math.floor(point.value * 100000 + 0.5) / 100000
             if (lastPointValues[lastPointIndex] ~= newPointValue) then
-              lastPointValues[lastPointIndex] = newPointValue
-
               table.insert(automationEvents,
                 {
                   device = targetDevice,
@@ -372,11 +355,15 @@ function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum,
                   paramIndex = _paramIndex,
                   type = _type,
                   parameterName = parameter.name,
-                  timestamp = _timestamp,
+                  timestamp = (lineOffset + point.time - 1) * 256,
                   value = newPointValue,
+                  interpolation = automation.playmode == renoise.PatternTrackAutomation.PLAYMODE_POINTS and 'hold' or
+                      'linear',
                   scaling = point.scaling
                 }
               )
+
+              lastPointValues[lastPointIndex] = newPointValue
             end
 
             if (usedTypes[_type] == nil) then
