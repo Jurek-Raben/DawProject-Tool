@@ -213,7 +213,7 @@ function DawProject:generateNoteEventsDataForXML(songEvents, automationPoints)
         RealPoint = self:generateNotePressureEventsDataForXML(noteEvent.pressureTimeline),
         _attr = {
           id = 'polypressure' .. noteEvent.trackNum .. '-' .. noteEvent.seqNum .. '-' .. #notes,
-          unit = 'linear'
+          unit = 'linear',
         }
       } or nil
 
@@ -332,9 +332,9 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
           id = parameterIdPrefix .. '-' .. paramIndex,
           name = automationEvent.parameterName,
           parameterID = parameterID,
-          unit = "normalized",
-          min = "0",
-          max = "1"
+          unit = automationEvent.unit or 'normalized',
+          min = automationEvent.min or "0",
+          max = automationEvent.min or "1",
         }
       }
     end
@@ -344,8 +344,7 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
       _attr = {
         time = Helpers:round(automationEvent.timestamp * scaleFactor, 6),
         value = Helpers:round(automationEvent.value, 6),
-        interpolation = automationEvent.interpolation
-
+        interpolation = automationEvent.interpolation,
       }
     }
   end

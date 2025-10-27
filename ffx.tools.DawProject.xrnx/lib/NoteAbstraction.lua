@@ -203,9 +203,9 @@ function NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, po
         type = 'PB',
         parameterName = 'Pitchbend',
         timestamp = (lineOffset + position.line - 1) * 256 + noteColumn.delay_value,
-        value = tonumber("0x" .. fxColumn.number_string .. fxColumn.amount_string, 16) / 0x7f7f,
+        value = tonumber("0x" .. fxColumn.number_string .. fxColumn.amount_string, 16) / 0x7fff,
         interpolation = 'linear',
-        scaling = 1
+        scaling = 1,
       }
     )
   end
@@ -341,7 +341,9 @@ function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum,
 
         local _type = getType(paramIndex)
         local _paramIndex = getIndex(paramIndex)
-        local lastPointIndex = trackNum .. deviceIndex .. _paramIndex
+        local lastPointIndex = trackNum ..
+            deviceIndex ..
+            _paramIndex -- fixme doesn't work for entries on the very left, ugly too
 
         if (_type ~= nil) then
           for _, point in ipairs(automation.points) do
