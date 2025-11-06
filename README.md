@@ -42,6 +42,8 @@ This tool has been tested on macOS only so far. It currently requires the includ
 
 The VST3 helper tool is known to not fully work on Windows. You will have to try yourself on Windows and Linux, but the tools are also included for these OSes.
 
+Some exports of presets might take a long time, so long that the maximum execution time is exceeded. In this case just click on "continue", multiple times if required.
+
 ## Song requirements
 
 A song has to fulfill the following requirements for a working export:
@@ -60,6 +62,10 @@ So I am not responsible for any damage these binaries could do to your system an
 ## Download
 
 [Automatic release builds](https://github.com/Jurek-Raben/DawProject-Tool/releases)
+
+## DAW specific workarounds
+
+Bitwig loads all the exports just fine, just like it should be. Studio One 7.2+ only correctly works with VST3s. If you want to import into Cubase 14/15, first import to Studio One, then export as dawproject again. Then Cubase also loads the VST3 presets. Most likely these problems are caused by bugs inside Studio One and Cubase, not this exporter tool.
 
 ## Development insights
 
