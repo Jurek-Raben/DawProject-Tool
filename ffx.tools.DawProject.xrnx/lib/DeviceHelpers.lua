@@ -16,19 +16,21 @@ DeviceHelpers = {}
 DeviceHelpers.cache = Cache()
 
 function DeviceHelpers:getParameterChunk(device)
-  local startOffset, endOffset = string.find(device.active_preset_data, "<ParameterChunk>")
-  local nodeEndOffset = string.find(device.active_preset_data, "</", endOffset)
+  local activePresetData = device.active_preset_data
+  local startOffset, endOffset = string.find(activePresetData, "<ParameterChunk>")
+  local nodeEndOffset = string.find(activePresetData, "</", endOffset)
   if (startOffset ~= nil and nodeEndOffset ~= nil) then
-    return string.sub(device.active_preset_data, startOffset + 16 + 9, nodeEndOffset - 1 - 3)
+    return string.sub(activePresetData, startOffset + 16 + 9, nodeEndOffset - 1 - 3)
   end
   return nil
 end
 
 function DeviceHelpers:getActivePresetDataContent(device, nodeName)
-  local startOffset, endOffset = string.find(device.active_preset_data, "<" .. nodeName .. ">")
-  local nodeEndOffset = string.find(device.active_preset_data, "</", endOffset)
+  local activePresetData = device.active_preset_data
+  local startOffset, endOffset = string.find(activePresetData, "<" .. nodeName .. ">")
+  local nodeEndOffset = string.find(activePresetData, "</", endOffset)
   if (startOffset ~= nil and nodeEndOffset ~= nil) then
-    return string.sub(device.active_preset_data, startOffset + string.len(nodeName) + 2,
+    return string.sub(activePresetData, startOffset + string.len(nodeName) + 2,
       nodeEndOffset - 1)
   end
   return nil
@@ -142,7 +144,7 @@ function DeviceHelpers:readPluginInfo(device)
   local _, pluginId = pluginPath:match("(.*/)(.*)")
 
   local dbPathAddon = jit.arch
-  if (jit.arch == 'x86_64' or jit.arch == 'amd64' or isBridged) then
+  if (jit.arch == 'x86_64' or jit.arch == 'amd64') then
     dbPathAddon = 'x64'
   end
 
