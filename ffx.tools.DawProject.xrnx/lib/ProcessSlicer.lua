@@ -69,6 +69,14 @@ end
 
 
 --------------------------------------------------------------------------------
+-- handle errors with the given function, instead of forwarding them to the main thread
+
+function ProcessSlicer:set_error_callback(error_callback)
+  self.__error_callback = error_callback
+end
+
+
+--------------------------------------------------------------------------------
 -- returns true when the current process currently is running
 
 function ProcessSlicer:running()
@@ -129,10 +137,16 @@ function ProcessSlicer:__on_idle()
     self.__data = result
     
     if (not succeeded) then
+      -- the status was removed from the result already, so the message is the first entry
+      local errorMessage = debug.traceback(self.__process_thread, tostring(result[1]))
       -- stop the process on errors
       self:stop()
-      -- and forward the error to the main thread
-      error(result[2]) 
+      if (self.__error_callback ~= nil) then
+        self.__error_callback(errorMessage)
+      else
+        -- and forward the error to the main thread
+        error(errorMessage, 0)
+      end
     end
     
   -- stop when the process function completed

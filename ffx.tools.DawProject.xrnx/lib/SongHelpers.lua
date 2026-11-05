@@ -77,7 +77,8 @@ function SongHelpers:getInstrumentIndexOfTrack(track)
           if (not patternLine.is_empty) then
             for colIndex = 1, track.visible_note_columns do
               noteColumn = patternLine:note_column(colIndex)
-              if (noteColumn.instrument_value ~= 255) then
+              -- a column can refer to an instrument that doesn't exist (anymore)
+              if (noteColumn.instrument_value ~= 255 and noteColumn.instrument_value < #Song.instruments) then
                 return noteColumn.instrument_value + 1
               end
             end

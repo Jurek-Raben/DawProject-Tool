@@ -12,3 +12,6 @@ RUN dpkg --add-architecture amd64 && \
 
 ENV CC_x86_64_pc_windows_gnu=x86_64-w64-mingw32-gcc
 ENV CXX_x86_64_pc_windows_gnu=x86_64-w64-mingw32-g++
+
+# libclang does not find its own headers (e.g. mm_malloc.h) when generating the vst3 bindings
+ENV CPLUS_INCLUDE_PATH=/usr/lib/llvm-18/lib/clang/18/include

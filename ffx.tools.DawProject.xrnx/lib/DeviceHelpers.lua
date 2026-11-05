@@ -15,6 +15,9 @@ DeviceHelpers = {}
 
 DeviceHelpers.cache = Cache()
 
+InfoToolOutputBegin = '@@VSTINFO_BEGIN@@'
+InfoToolOutputEnd = '@@VSTINFO_END@@'
+
 function DeviceHelpers:getParameterChunk(device)
   local activePresetData = device.active_preset_data
   local startOffset, endOffset = string.find(activePresetData, "<ParameterChunk>")
@@ -133,7 +136,7 @@ function DeviceHelpers:readPluginInfo(device)
   local pluginInfo = self.cache:get(pluginPath)
   local filePath = nil
   local isBridged = DeviceHelpers:isPluginBridged(device)
-  local dbPath = renoise.tool().bundle_path:match("(.*Renoise/V" .. renoise.RENOISE_VERSION .. "/)")
+  local dbPath = renoise.tool().bundle_path:gsub("\\", "/"):match("(.*/V" .. renoise.RENOISE_VERSION .. "/)")
   local vstToolPath = nil
   local osString = Helpers:getShortOSString()
 
@@ -141,7 +144,13 @@ function DeviceHelpers:readPluginInfo(device)
     return pluginInfo
   end
 
-  local _, pluginId = pluginPath:match("(.*/)(.*)")
+  if (dbPath == nil) then
+    print('error: Renoise preferences path not found in', renoise.tool().bundle_path)
+    return nil
+  end
+
+  -- the identifier itself can contain slashes, e.g. "NX 5.0/Stereo" inside of a VST2 shell
+  local pluginId = pluginPath:match("VST3?/(.*)$")
 
   local dbPathAddon = jit.arch
   if (jit.arch == 'x86_64' or jit.arch == 'amd64') then
@@ -175,7 +184,10 @@ function DeviceHelpers:readPluginInfo(device)
     return nil
   end
 
-  local sql = "SELECT LocalFilePath FROM CachedPlugins WHERE DocumentIdentifier = '" .. pluginId .. "';"
+  -- A plugin can have multiple entries, e.g. one per installed version of a VST2 shell.
+  -- Entries of plugins that are not installed anymore have no path.
+  local sql = "SELECT LocalFilePath FROM CachedPlugins WHERE DocumentIdentifier = '" .. pluginId:gsub("'", "''") ..
+      "' AND LocalFilePath <> '';"
   local result = {}
   for a in db:rows(sql) do
     for _, v in ipairs(a) do
@@ -186,10 +198,17 @@ function DeviceHelpers:readPluginInfo(device)
   db:close()
 
   if (result[1] == nil) then
+    print('warning: no plugin file known, it seems to be not installed:', pluginId)
     return nil
   end
 
   filePath = result[1]
+  for _, localFilePath in ipairs(result) do
+    if (io.exists(localFilePath)) then
+      filePath = localFilePath
+      break
+    end
+  end
 
   if (osString == 'mac') then
     if (jit.arch == "arm64" and isBridged == true or (jit.arch == "x86_64" or jit.arch == "amd64") and isBridged == false) then
@@ -199,6 +218,10 @@ function DeviceHelpers:readPluginInfo(device)
     elseif ((jit.arch == "x86_64" or jit.arch == "amd64") and isBridged == true) then
       return nil
     end
+  elseif (isBridged == true) then
+    -- the included tools can't load plugins of a different architecture on this os
+    print('error: vst info tool can not read the bridged plugin', filePath)
+    return nil
   end
 
   if (not io.exists('./bin/' .. vstToolPath)) then
@@ -206,38 +229,82 @@ function DeviceHelpers:readPluginInfo(device)
     return nil
   end
 
-  print("executing", vstToolPath .. " '" .. filePath .. "'")
-  -- execute within bin directory, since some plugins will generate trash file data
-  vstToolPath = "cd ./bin;./" .. vstToolPath
-  local toolOutput = Helpers:captureConsole(vstToolPath .. " '" .. filePath .. "'")
+  pluginInfo = self:runInfoTool(vstToolPath, filePath)
 
-  -- plugins might output to the console by themselves
-  local startOffset = string.find(toolOutput, "{\"")
-  local endOffset = string.find(toolOutput, "\"}")
-
-  if (startOffset == nil or endOffset == nil) then
-    print('error: Tool output offsets not found', toolOutput)
-    return nil
-  end
-  toolOutput = string.sub(toolOutput, startOffset, endOffset + 2)
-
-  pcall(function()
-    pluginInfo = json.decode(toolOutput)
-    if (pluginInfo['error'] ~= nil) then
-      print("error: vst info tool thrown", pluginInfo['error'])
+  -- a VST2 shell contains multiple plugins, so the one of this device has to be read separately
+  if (pluginInfo ~= nil and pluginInfo['shellPlugins'] ~= nil) then
+    local shellPlugin = self:findShellPluginByName(pluginInfo['shellPlugins'], pluginId)
+    if (shellPlugin == nil) then
+      print('error: no plugin found in shell for', pluginId, filePath)
       return nil
     end
+    pluginInfo = self:runInfoTool(vstToolPath, filePath, shellPlugin['id'])
+  end
 
-    print("tool output:")
-    if (string.find(pluginPath, "VST3/")) then
-      print('parameters size', #pluginInfo['parameters'])
-    else
-      rprint(pluginInfo)
+  if (pluginInfo == nil) then
+    return nil
+  end
+
+  print("tool output:")
+  if (string.find(pluginPath, "VST3/")) then
+    print('parameters size', #(pluginInfo['parameters'] or {}))
+  else
+    for key, value in pairs(pluginInfo) do
+      print('[' .. key .. '] => ', value)
     end
+  end
 
-    self.cache:set(pluginPath, pluginInfo)
-  end)
+  self.cache:set(pluginPath, pluginInfo)
   return pluginInfo
+end
+
+function DeviceHelpers:runInfoTool(vstToolPath, filePath, shellPluginId)
+  local shellArgument = shellPluginId and (' ' .. shellPluginId) or ''
+
+  -- execute within bin directory, since some plugins will generate trash file data
+  -- stderr is included, because the tools report their errors there
+  local toolCommand
+  if (Helpers:getShortOSString() == 'win') then
+    -- cmd.exe only knows double quotes, and Windows needs backslashes for loading a library
+    toolCommand = 'cd bin && .\\' .. vstToolPath .. ' "' .. filePath:gsub("/", "\\") .. '"' .. shellArgument .. ' 2>&1'
+  else
+    toolCommand = "cd ./bin && ./" .. vstToolPath .. " '" .. filePath:gsub("'", "'\\''") .. "'" .. shellArgument .. " 2>&1"
+  end
+
+  print("executing", toolCommand)
+  local toolOutput = Helpers:captureConsole(toolCommand)
+
+  -- plugins might print to the console by themselves, so the result is enclosed by markers
+  local _, beginOffset = string.find(toolOutput, InfoToolOutputBegin, 1, true)
+  local endOffset = beginOffset and string.find(toolOutput, InfoToolOutputEnd, beginOffset + 1, true)
+
+  if (endOffset == nil) then
+    print('error: Tool output not found', toolOutput)
+    return nil
+  end
+
+  local success, decodedInfo = pcall(json.decode, string.sub(toolOutput, beginOffset + 1, endOffset - 1))
+  if (not success) then
+    print('error: Tool output is invalid', decodedInfo)
+    return nil
+  end
+
+  if (decodedInfo['error'] ~= nil) then
+    print("error: vst info tool thrown", decodedInfo['error'])
+    return nil
+  end
+
+  return decodedInfo
+end
+
+-- Renoise uses the name of the plugin inside of a shell as its identifier
+function DeviceHelpers:findShellPluginByName(shellPlugins, name)
+  for _, shellPlugin in ipairs(shellPlugins) do
+    if (shellPlugin['name'] == name) then
+      return shellPlugin
+    end
+  end
+  return nil
 end
 
 function DeviceHelpers:findPluginInfoParameterObjectByIndex(pluginInfo, searchIndex)

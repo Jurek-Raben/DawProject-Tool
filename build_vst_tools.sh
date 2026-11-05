@@ -1,5 +1,8 @@
 
-mkdir ./ffx.tools.DawProject.xrnx/bin
+# stop on the first failed build, otherwise old binaries would be copied silently
+set -e
+
+mkdir -p ./ffx.tools.DawProject.xrnx/bin
 
 # build vst2info-tool
 cd vst2info-tool
@@ -14,7 +17,7 @@ cargo b -r  --target=x86_64-apple-darwin --target=aarch64-apple-darwin
 cp ./target/x86_64-apple-darwin/release/vst2info-tool ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-mac-x64
 cp ./target/aarch64-apple-darwin/release/vst2info-tool ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-mac-arm
 
-cargo b -r  --target=x86_64-pc-windows-gnu
+cross build --release --target=x86_64-pc-windows-gnu
 cp ./target/x86_64-pc-windows-gnu/release/vst2info-tool.exe ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-win.exe
 
 CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-unknown-linux-gnu-gcc \
@@ -22,9 +25,9 @@ cargo b -r --target=x86_64-unknown-linux-gnu
 cp ./target/x86_64-unknown-linux-gnu/release/vst2info-tool ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-linux
 fi
 
-if [[ "$OSTYPE" == "win32"* ]]; then
+if [[ "$OSTYPE" == "win32"* || "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
 cargo b -r
-cp ./target/release/vst2info-tool ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-win.exe
+cp ./target/release/vst2info-tool.exe ../ffx.tools.DawProject.xrnx/bin/vst2info-tool-win.exe
 fi
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
@@ -50,6 +53,16 @@ cp ./target/x86_64-pc-windows-gnu/release/vst3info-tool.exe ../ffx.tools.DawProj
 cross build --release --target=x86_64-unknown-linux-gnu
 cp ./target/x86_64-unknown-linux-gnu/release/vst3info-tool ../ffx.tools.DawProject.xrnx/bin/vst3info-tool-linux
 
+fi
+
+if [[ "$OSTYPE" == "win32"* || "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
+cargo b -r
+cp ./target/release/vst3info-tool.exe ../ffx.tools.DawProject.xrnx/bin/vst3info-tool-win.exe
+fi
+
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+cargo b -r
+cp ./target/release/vst3info-tool ../ffx.tools.DawProject.xrnx/bin/vst3info-tool-linux
 fi
 
 cd ..

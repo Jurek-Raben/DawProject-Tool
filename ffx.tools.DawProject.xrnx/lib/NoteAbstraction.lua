@@ -90,7 +90,9 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
         usedTypes = NoteAbstraction:addGraphicalTrackAutomation(automationEvents, position.track,
           pattern:track(position.track), lineOffset, lastPointValues)
 
-        if (yieldCallback ~= nil and seqIndex % 4 == 0) then yieldCallback() end
+        if (yieldCallback ~= nil and seqIndex % 4 == 0) then
+          yieldCallback(seqIndex / #Song.sequencer.pattern_sequence)
+        end
       end
 
       NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, position, noteColumn, lineOffset, usedTypes)
@@ -172,14 +174,22 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
 end
 
 function NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, position, noteColumn, lineOffset, usedTypes)
+  -- a column can refer to an instrument that doesn't exist (anymore)
+  if (noteColumn.instrument_value ~= renoise.PatternLine.EMPTY_INSTRUMENT and noteColumn.instrument_value >= #Song.instruments) then
+    print('warning: skipping invalid instrument ' .. noteColumn.instrument_string ..
+      ' at pattern ' .. position.pattern .. ', track ' .. position.track ..
+      ', line ' .. position.line .. ', column ' .. position.column)
+    return
+  end
+
   local fxColumn = pattern:track(position.track):line(position.line).effect_columns[1]
 
   -- Midi control messages (CC)
   if ('M0' == noteColumn.panning_string) and (noteColumn.instrument_value ~= renoise.PatternLine.EMPTY_INSTRUMENT) then
     table.insert(automationEvents,
       {
-        device = Song:instrument(noteColumn.instrument_value).plugin_properties.plugin_device,
-        deviceIndex = "i" .. noteColumn.instrument_value,
+        device = Song:instrument(noteColumn.instrument_value + 1).plugin_properties.plugin_device,
+        deviceIndex = "i" .. (noteColumn.instrument_value + 1),
         trackNum = position.track,
         paramIndex = tonumber("0x" .. fxColumn.number_string, 16),
         type = 'CC',
@@ -196,8 +206,8 @@ function NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, po
   if ('M1' == noteColumn.panning_string) and (noteColumn.instrument_value ~= renoise.PatternLine.EMPTY_INSTRUMENT) then
     table.insert(automationEvents,
       {
-        device = Song:instrument(noteColumn.instrument_value).plugin_properties.plugin_device,
-        deviceIndex = "i" .. noteColumn.instrument_value,
+        device = Song:instrument(noteColumn.instrument_value + 1).plugin_properties.plugin_device,
+        deviceIndex = "i" .. (noteColumn.instrument_value + 1),
         trackNum = position.track,
         paramIndex = 200000, -- fake index
         type = 'PB',
@@ -214,8 +224,8 @@ function NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, po
   if ('M3' == noteColumn.panning_string) and (noteColumn.instrument_value ~= renoise.PatternLine.EMPTY_INSTRUMENT) then
     table.insert(automationEvents,
       {
-        device = Song:instrument(noteColumn.instrument_value).plugin_properties.plugin_device,
-        deviceIndex = "i" .. noteColumn.instrument_value,
+        device = Song:instrument(noteColumn.instrument_value + 1).plugin_properties.plugin_device,
+        deviceIndex = "i" .. (noteColumn.instrument_value + 1),
         trackNum = position.track,
         paramIndex = 200001, -- fake index
         type = 'CP',
@@ -232,8 +242,8 @@ function NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, po
   if ('M2' == noteColumn.panning_string) and (noteColumn.instrument_value ~= renoise.PatternLine.EMPTY_INSTRUMENT) then
     table.insert(automationEvents,
       {
-        device = Song:instrument(noteColumn.instrument_value).plugin_properties.plugin_device,
-        deviceIndex = "i" .. noteColumn.instrument_value,
+        device = Song:instrument(noteColumn.instrument_value + 1).plugin_properties.plugin_device,
+        deviceIndex = "i" .. (noteColumn.instrument_value + 1),
         trackNum = position.track,
         paramIndex = 200002, -- fake index
         type = 'Prg',
@@ -244,6 +254,22 @@ function NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, po
         scaling = 1
       }
     )
+  end
+end
+
+-- A device without a target only matters, if it is automated. Warns once per device.
+function NoteAbstraction:warnAboutSkippedAutomation(device, trackNum, deviceIndex, reason)
+  local cacheKey = 'skipped_' .. trackNum .. '_' .. deviceIndex
+  if (self.automationCache:get(cacheKey)) then
+    return
+  end
+  self.automationCache:set(cacheKey, true)
+
+  for paramIndex = 1, #device.parameters do
+    if (device:parameter(paramIndex).is_automated) then
+      print('warning: skipping automation of ' .. device.name .. ' at track ' .. trackNum .. ': ' .. reason)
+      return
+    end
   end
 end
 
@@ -268,14 +294,12 @@ function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum,
       local instrCacheKey = 'instrnum_' .. trackNum
       local targetInstrumentNum = self.automationCache:get(instrCacheKey)
       if (targetInstrumentNum == nil) then
-        targetInstrumentNum = SongHelpers:getInstrumentIndexOfTrack(track)
-      end
-      if (targetInstrumentNum) then
+        -- also remember tracks without an instrument, searching the whole song is expensive
+        targetInstrumentNum = SongHelpers:getInstrumentIndexOfTrack(track) or false
         self.automationCache:set(instrCacheKey, targetInstrumentNum)
-        return targetInstrumentNum
       end
 
-      return nil
+      return targetInstrumentNum or nil
     end
 
     if (device.device_path == "Audio/Effects/Native/*Instr. Automation") then
@@ -283,10 +307,16 @@ function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum,
       local targetInstrumentNum = getInstrNum()
 
       if (targetInstrumentNum == nil) then
-        print('error: could not find instr autom dev at tr' .. trackNum)
+        self:warnAboutSkippedAutomation(device, trackNum, deviceIndex, 'no instrument is playing on this track')
+        goto continue
       else
         targetDevice = Song:instrument(targetInstrumentNum).plugin_properties.plugin_device
         deviceIndexString = "i" .. targetInstrumentNum
+
+        if (targetDevice == nil) then
+          self:warnAboutSkippedAutomation(device, trackNum, deviceIndex, 'the instrument on this track is no plugin')
+          goto continue
+        end
 
         getIndex = function(paramNum)
           local cacheKey = trackNum .. deviceIndex .. '_' .. paramNum
@@ -310,7 +340,8 @@ function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum,
       local targetInstrumentNum = getInstrNum()
 
       if (targetInstrumentNum == nil) then
-        print('error: could not find midi control dev at tr' .. trackNum)
+        self:warnAboutSkippedAutomation(device, trackNum, deviceIndex, 'no instrument is playing on this track')
+        goto continue
       else
         targetDevice = Song:instrument(targetInstrumentNum).plugin_properties.plugin_device
         deviceIndexString = "i" .. targetInstrumentNum
@@ -341,6 +372,11 @@ function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum,
 
         local _type = getType(paramIndex)
         local _paramIndex = getIndex(paramIndex)
+
+        if (_paramIndex == nil) then
+          goto continue2
+        end
+
         local lastPointIndex = trackNum ..
             deviceIndex ..
             _paramIndex -- fixme doesn't work for entries on the very left, ugly too

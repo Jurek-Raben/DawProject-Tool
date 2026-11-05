@@ -43,7 +43,7 @@ function Helpers:rgbToHex(r, g, b)
 end
 
 function Helpers:writeFile(filePath, content)
-  local f = assert(io.open(filePath, "w"))
+  local f = assert(io.open(filePath, "wb"))
   f:write(content)
   f:close()
 end
@@ -83,17 +83,6 @@ function Helpers:stringToBase64(data)
     for i = 1, 6 do c = c + (x:sub(i, i) == '1' and 2 ^ (6 - i) or 0) end
     return b:sub(c + 1, c + 1)
   end) .. ({ '', '==', '=' })[#data % 3 + 1])
-end
-
-local status_animation = { "", ".", "..", "..." }
-local status_animation_pos = 1
-function Helpers:generateStatusAnimation()
-  if status_animation_pos >= #status_animation then
-    status_animation_pos = 1
-  else
-    status_animation_pos = status_animation_pos + 1
-  end
-  return status_animation[status_animation_pos]
 end
 
 function Helpers:hexToCharLittleEndian(hexString)

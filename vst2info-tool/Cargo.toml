@@ -6,7 +6,6 @@ edition = "2024"
 repository = "https://github.com/Jurek-Raben/DawProject-Tool"
 
 [dependencies]
-vst2 = "0.0.1"
-base64 = "0.22.1"
 json = "0.12.4"
+libloading = "0.8.8"
 

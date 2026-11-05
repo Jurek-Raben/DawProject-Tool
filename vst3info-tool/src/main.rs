@@ -293,20 +293,17 @@ unsafe fn suppress_stdout<F: FnOnce() -> R, R>(f: F) -> R {
 }
 
 // Improved error handling
+// Plugins may print to the console by themselves, so the result is enclosed by unique markers
+const OUTPUT_BEGIN: &str = "@@VSTINFO_BEGIN@@";
+const OUTPUT_END: &str = "@@VSTINFO_END@@";
+
+fn format_output(output: json::JsonValue) -> String {
+    format!("{}{}{}", OUTPUT_BEGIN, json::stringify(output), OUTPUT_END)
+}
+
 fn error_exit(error_message: &str) -> ! {
-    eprintln!("{}", json::stringify(object! { error: error_message }));
+    eprintln!("{}", format_output(object! { error: error_message }));
     exit(1);
-}
-
-// RAII guard for library lifetime management
-struct LibraryGuard {
-    _lib: Library,
-}
-
-impl LibraryGuard {
-    fn new(lib: Library) -> Self {
-        Self { _lib: lib }
-    }
 }
 
 fn main() {
@@ -322,13 +319,16 @@ fn main() {
     // Get the VST3 binary path
     let binary_path = match get_vst3_binary_path(&path_string) {
         Ok(path) => path,
-        Err(_) => error_exit("Path does not exist or is invalid"),
+        Err(error) => error_exit(&format!(
+            "Path does not exist or is invalid ({}): {}",
+            path_string, error
+        )),
     };
 
     // Load and inspect the plugin
     let info = match unsafe { suppress_stdout(|| inspect_vst3_plugin(&binary_path)) } {
         Ok(info) => info,
-        Err(_) => error_exit("Failed to load or inspect plugin"),
+        Err(error) => error_exit(&format!("Failed to load or inspect plugin: {}", error)),
     };
 
     let controller_info = match info.controller_info {
@@ -356,9 +356,11 @@ fn main() {
     // Filter and add parameters
     for (i, param) in controller_info.parameters.iter().enumerate() {
         let title_lower = param.title.to_lowercase();
-        let forbidden = ["midi", "cc "];
+        // "cc" has to be a separate word, so names like "Acc Level" are kept
+        let is_midi_parameter = title_lower.contains("midi")
+            || title_lower.split_whitespace().any(|word| word == "cc");
 
-        if !title_lower.is_empty() && !forbidden.iter().any(|f| title_lower.contains(f)) {
+        if !title_lower.is_empty() && !is_midi_parameter {
             output["parameters"].push(object! {
                 id: param.id,
                 index: i,
@@ -368,7 +370,7 @@ fn main() {
         }
     }
 
-    println!("{}", json::stringify(output));
+    println!("{}", format_output(output));
 }
 
 // Improved path handling
@@ -468,14 +470,48 @@ fn find_so_binary_in_directory(dir: &std::path::Path) -> Result<String, PluginEr
     Err(PluginError::PathError("No SO binary found".to_string()))
 }
 
-// Unified library loading
+#[cfg(unix)]
 unsafe fn load_vst3_library(path: &str) -> Result<Library, PluginError> {
     Library::new(path).map_err(|e| PluginError::LoadError(format!("Failed to load library: {}", e)))
 }
 
-// Improved main inspection function with proper library management
+// Plugins may ship DLLs next to their binary, these are only found with the altered search path
+#[cfg(windows)]
+unsafe fn load_vst3_library(path: &str) -> Result<Library, PluginError> {
+    use libloading::os::windows::{LOAD_WITH_ALTERED_SEARCH_PATH, Library as WindowsLibrary};
+
+    WindowsLibrary::load_with_flags(path, LOAD_WITH_ALTERED_SEARCH_PATH)
+        .map(Library::from)
+        .map_err(|e| PluginError::LoadError(format!("Failed to load library: {}", e)))
+}
+
 unsafe fn inspect_vst3_plugin(path: &str) -> Result<PluginInfo, PluginError> {
     let lib = load_vst3_library(path)?;
+
+    // The optional Windows module entry of the VST3 specification
+    #[cfg(windows)]
+    {
+        if let Ok(init_dll) = lib.get::<unsafe extern "system" fn() -> u8>(b"InitDll") {
+            init_dll();
+        }
+    }
+
+    // The Linux module entry of the VST3 specification, it needs the handle of the library
+    #[cfg(target_os = "linux")]
+    let lib = {
+        let handle = lib.into_raw();
+        let lib = Library::from_raw(handle);
+        if let Ok(module_entry) =
+            lib.get::<unsafe extern "C" fn(*mut std::ffi::c_void) -> u8>(b"ModuleEntry")
+        {
+            if module_entry(handle) == 0 {
+                return Err(PluginError::InitError(
+                    "ModuleEntry returned false".to_string(),
+                ));
+            }
+        }
+        lib
+    };
 
     let get_factory: Symbol<unsafe extern "C" fn() -> *mut IPluginFactory> = lib
         .get(b"GetPluginFactory")
@@ -491,10 +527,14 @@ unsafe fn inspect_vst3_plugin(path: &str) -> Result<PluginInfo, PluginError> {
     let factory = ComPtr::<IPluginFactory>::from_raw(factory_ptr)
         .ok_or_else(|| PluginError::FactoryError("Failed to wrap IPluginFactory".to_string()))?;
 
-    // Keep library alive for plugin lifetime
-    let _lib_guard = LibraryGuard::new(lib);
+    let plugin_info = extract_plugin_info(&factory);
 
-    extract_plugin_info(&factory)
+    // The factory has to be released while its code is still loaded. The library is never
+    // unloaded on purpose, since plugins may crash on unload and the process exits right after.
+    drop(factory);
+    std::mem::forget(lib);
+
+    plugin_info
 }
 
 // Refactored plugin info extraction
@@ -581,8 +621,12 @@ unsafe fn initialize_and_inspect_plugin(
         )));
     }
 
+    // Component and controller are the same object for single component plugins
+    let is_single_component = component.cast::<IEditController>().is_some();
+
     // Get or create controller
-    let controller = match get_or_create_controller(&component, factory, &audio_class_id)? {
+    let controller = match get_or_create_controller(&component, factory, &audio_class_id, host_ptr)?
+    {
         Some(ctrl) => ctrl,
         None => {
             component.terminate();
@@ -596,7 +640,9 @@ unsafe fn initialize_and_inspect_plugin(
     let component_info = get_component_info(&component)?;
 
     // Connect components if they are separate
-    let _ = connect_component_and_controller(&component, &controller);
+    if !is_single_component {
+        let _ = connect_component_and_controller(&component, &controller);
+    }
 
     // Activate component
     component.setActive(1);
@@ -604,9 +650,13 @@ unsafe fn initialize_and_inspect_plugin(
     // Get controller info
     let controller_info = get_controller_info(&controller)?;
 
-    // Cleanup
+    // Cleanup in reverse order of the setup
+    component.setActive(0);
+    if !is_single_component {
+        disconnect_component_and_controller(&component, &controller);
+        controller.terminate();
+    }
     component.terminate();
-    controller.terminate();
 
     Ok((
         Some(component_info),
@@ -620,6 +670,7 @@ unsafe fn get_or_create_controller(
     component: &ComPtr<IComponent>,
     factory: &ComPtr<IPluginFactory>,
     _class_id: &TUID,
+    host: *mut FUnknown,
 ) -> Result<Option<ComPtr<IEditController>>, PluginError> {
     // First, try to cast component to IEditController (single component)
     if let Some(controller) = component.cast::<IEditController>() {
@@ -649,7 +700,7 @@ unsafe fn get_or_create_controller(
         .ok_or_else(|| PluginError::ComponentError("Failed to wrap controller".to_string()))?;
 
     // Initialize controller
-    let init_result = controller.initialize(ptr::null_mut());
+    let init_result = controller.initialize(host);
     if init_result != kResultOk {
         return Ok(None);
     }
@@ -682,6 +733,19 @@ unsafe fn connect_component_and_controller(
         Err(PluginError::ComponentError(
             "No connection points available".to_string(),
         ))
+    }
+}
+
+unsafe fn disconnect_component_and_controller(
+    component: &ComPtr<IComponent>,
+    controller: &ComPtr<IEditController>,
+) {
+    let comp_cp = component.cast::<IConnectionPoint>();
+    let ctrl_cp = controller.cast::<IConnectionPoint>();
+
+    if let (Some(comp_cp), Some(ctrl_cp)) = (comp_cp, ctrl_cp) {
+        comp_cp.disconnect(ctrl_cp.as_ptr());
+        ctrl_cp.disconnect(comp_cp.as_ptr());
     }
 }
 

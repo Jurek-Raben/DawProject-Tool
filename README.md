@@ -42,6 +42,8 @@ This tool has been tested on macOS only so far. It currently requires the includ
 
 The VST3 helper tool is known to not fully work on Windows. You will have to try yourself on Windows and Linux, but the tools are also included for these OSes.
 
+On Linux the `zip` command has to be installed for packing the .dawproject file.
+
 Some exports of presets might take a long time, so long that the maximum execution time is exceeded. In this case just click on "continue", multiple times if required.
 
 ## Song requirements
@@ -135,7 +137,7 @@ https://github.com/rxi/json.lua?tab=readme-ov-file
 xml2lua by Manoel Campos da Silva Filho, Paul Chakravarti
 https://github.com/manoelcampos/xml2lua
 
-Also FancyStatus and ProcessSlicer.
+Also ProcessSlicer.
 
 #### License
 

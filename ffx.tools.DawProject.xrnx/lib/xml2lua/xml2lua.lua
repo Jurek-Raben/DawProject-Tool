@@ -140,6 +140,21 @@ function xml2lua.loadFile(xmlFilePath)
     error(e)
 end
 
+local xmlEscapeCharacters = {
+  ['&'] = '&amp;',
+  ['<'] = '&lt;',
+  ['>'] = '&gt;',
+  ['"'] = '&quot;',
+  ["'"] = '&apos;'
+}
+
+---Escapes the characters which have a special meaning in XML
+--@param value the attribute or tag value
+--@return the escaped value as a string
+local function escapeXml(value)
+  return (string.gsub(tostring(value), '[&<>"\']', xmlEscapeCharacters))
+end
+
 ---Gets an _attr element from a table that represents the attributes of an XML tag,
 --and generates a XML String representing the attibutes to be inserted
 --into the openning tag of the XML
@@ -151,7 +166,7 @@ local function attrToXml(attrTable)
   attrTable = attrTable or {}
 
   for k, v in pairs(attrTable) do
-      s = s .. " " .. k .. "=" .. '"' .. v .. '"'
+      s = s .. " " .. k .. "=" .. '"' .. escapeXml(v) .. '"'
   end
   return s
 end
@@ -198,7 +213,7 @@ function xml2lua.addTagValueAttr(tagName, tagValue, attrTable, level)
   if (tagValue == '') then
     table.insert(xml2lua.xmltb, spaces .. '<' .. tagName .. attrStr .. '/>')
   else
-    table.insert(xml2lua.xmltb, spaces .. '<' .. tagName .. attrStr .. '>' .. tostring(tagValue) .. '</' .. tagName .. '>')
+    table.insert(xml2lua.xmltb, spaces .. '<' .. tagName .. attrStr .. '>' .. escapeXml(tagValue) .. '</' .. tagName .. '>')
   end
 end
 

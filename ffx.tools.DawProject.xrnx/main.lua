@@ -11,7 +11,7 @@ end
 
 package.path = "lib/xml2lua/?.lua;" .. package.path
 require('lib/lib-configurator')
-require('lib/FancyStatusMessage')
+require('lib/ProgressDialog')
 require('lib/ProcessSlicer')
 require('lib/NoteAbstraction')
 require('lib/GeneralHelpers')
@@ -27,7 +27,7 @@ require('lib/Cache')
 
 Song = renoise.song() -- needs a refresh later
 Tool = renoise.tool()
-local fancyStatus = nil
+local progressDialog = nil
 local process = nil
 local noteAbstraction = nil
 
@@ -46,6 +46,10 @@ TempDir = './tmp'
 ReduxVST3Identifier = '5653545252445872656E6F6973652072'
 ZipPackCommand = 'cd ' .. TempDir .. ' && tar -acvf %s --exclude=".DS_Store" --exclude="*.xrni" %s'
 ZipUnpackCommand = 'tar -xf %s --directory ' .. TempDir
+-- GNU tar can't create zip files, unlike the bsdtar of macOS and Windows
+if (os.platform() == 'LINUX') then
+  ZipPackCommand = 'cd ' .. TempDir .. ' && zip -FSr %s %s -x "*.DS_Store" "*.xrni"'
+end
 
 --------------------------------------------------------------------------------
 -- Default Config
@@ -141,7 +145,9 @@ function DawProject:generateNoteEventsDataForXML(songEvents, automationPoints)
   local lanesObj = {}
   local scaleFactor = SCALE_FACTOR / Song.transport.lpb
 
-  for _, noteEvent in ipairs(noteEvents) do
+  progressDialog:setPhase('Exporting notes', 0.85, 0.93)
+
+  for noteIndex, noteEvent in ipairs(noteEvents) do
     if (lanesObj[noteEvent.trackNum] == nil) then
       lanesObj[noteEvent.trackNum] = {
         Clips = {
@@ -156,8 +162,8 @@ function DawProject:generateNoteEventsDataForXML(songEvents, automationPoints)
         },
         Points = automationPoints[noteEvent.trackNum],
       }
+      progressDialog:setPhaseProgress(noteIndex / #noteEvents)
       coroutine.yield()
-      fancyStatus:show_status('Exporting note data to .dawproject' .. Helpers:generateStatusAnimation())
     end
 
     local clips = lanesObj[noteEvent.trackNum].Clips.Clip
@@ -244,46 +250,75 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
   local automationEvents = songEvents.automationEvents
 
   local automationsObj = {}
+  local automationLanes = {}
   local parametersObj = {}
   local scaleFactor = SCALE_FACTOR / Song.transport.lpb
 
-  for _, automationEvent in pairs(automationEvents) do
+  progressDialog:setPhase('Exporting automation', 0.35, 0.55)
+
+  for eventIndex, automationEvent in pairs(automationEvents) do
     local trackNum = automationEvent.trackNum
     local paramIndex = automationEvent.paramIndex
     local parameterIdPrefix = 'paramid-' .. trackNum .. '-' .. automationEvent.deviceIndex
 
     if (automationsObj[trackNum] == nil) then
       automationsObj[trackNum] = {}
+      progressDialog:setPhaseProgress(eventIndex / #automationEvents)
       coroutine.yield()
-      fancyStatus:show_status('Exporting automation data to .dawproject' .. Helpers:generateStatusAnimation())
     end
-    if (automationsObj[trackNum][paramIndex] == nil) then
-      automationsObj[trackNum][paramIndex] = {
+
+    -- A lane belongs to one parameter of one device. The lanes are stored with numeric keys,
+    -- because xml2lua only repeats a tag for those and turns string keys into tag names.
+    local laneKey = parameterIdPrefix .. '-' .. paramIndex .. '-' .. automationEvent.type
+    local automationLane = automationLanes[laneKey]
+    local expression = DawProject:mapExpressionType(automationEvent)
+    if (automationLane == nil) then
+      automationLane = {
         _attr = {
           name = automationEvent.parameterName,
           unit = "normalized"
         },
         Target = {
           _attr = {
-            parameter = parameterIdPrefix .. '-' .. paramIndex,
-            expression = DawProject:mapExpressionType(automationEvent),
+            parameter = expression == nil and (parameterIdPrefix .. '-' .. paramIndex) or nil,
+            expression = expression,
             controller = automationEvent.type == 'CC' and automationEvent.paramIndex or nil,
             channel = "0"
           }
         },
         RealPoint = {}
       }
+      automationLanes[laneKey] = automationLane
+      table.insert(automationsObj[trackNum], automationLane)
+    end
+
+    local points = automationLane.RealPoint
+    points[#points + 1] = {
+      _attr = {
+        time = Helpers:round(automationEvent.timestamp * scaleFactor, 6),
+        value = Helpers:round(automationEvent.value, 6),
+        interpolation = automationEvent.interpolation,
+      }
+    }
+
+    -- MIDI data is no plugin parameter. Its number would be read as the index of a parameter.
+    if (expression ~= nil) then
+      goto nextAutomationEvent
     end
 
     if (parametersObj[parameterIdPrefix] == nil) then
       parametersObj[parameterIdPrefix] = {}
+      progressDialog:setPhaseProgress(eventIndex / #automationEvents)
       coroutine.yield()
-      fancyStatus:show_status('Exporting automation data to .dawproject' .. Helpers:generateStatusAnimation())
     end
 
     if (parametersObj[parameterIdPrefix][paramIndex] == nil) then
       local parameterID = automationEvent.paramIndex
-      if (config['useVST3InfoTool'] == true and string.find(automationEvent.device.device_path, "VST3/") ~= nil) then
+      -- sample instruments have no plugin device
+      local devicePath = automationEvent.device and automationEvent.device.device_path or ''
+      local deviceName = automationEvent.device and automationEvent.device.name or 'sample instrument'
+      if (config['useVST3InfoTool'] == true and string.find(devicePath, "VST3/") ~= nil) then
+        progressDialog:setStatus('Reading parameters of ' .. deviceName)
         local pluginInfo = self.toolPluginCache:get(automationEvent.device.device_path)
         if (pluginInfo == nil) then
           pluginInfo = DeviceHelpers:readPluginInfo(automationEvent.device)
@@ -303,7 +338,7 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
         end
       end
 
-      if (os.platform() == 'MACINTOSH' and config['exportAU'] == true and string.find(automationEvent.device.device_path, "AU/") ~= nil) then
+      if (os.platform() == 'MACINTOSH' and config['exportAU'] == true and string.find(devicePath, "AU/") ~= nil) then
         local pluginInfo = self.toolPluginCache:get(automationEvent.device.device_path)
         if (pluginInfo == nil) then
           local deviceID = DeviceHelpers:getActivePresetDataContent(automationEvent.device, 'PluginIdentifier')
@@ -323,7 +358,7 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
         end
       end
 
-      print('linked param for instr ' .. automationEvent.device.name, automationEvent.parameterName,
+      print('linked param for instr ' .. deviceName, automationEvent.parameterName,
         automationEvent.type, automationEvent.value,
         parameterIdPrefix,
         paramIndex)
@@ -334,25 +369,21 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
           parameterID = parameterID,
           unit = automationEvent.unit or 'normalized',
           min = automationEvent.min or "0",
-          max = automationEvent.min or "1",
+          max = automationEvent.max or "1",
         }
       }
     end
 
-    local points = automationsObj[trackNum][paramIndex].RealPoint
-    points[#points + 1] = {
-      _attr = {
-        time = Helpers:round(automationEvent.timestamp * scaleFactor, 6),
-        value = Helpers:round(automationEvent.value, 6),
-        interpolation = automationEvent.interpolation,
-      }
-    }
+    ::nextAutomationEvent::
   end
 
   return { automationsObj = automationsObj, parametersObj = parametersObj }
 end
 
 function DawProject:addTrackToStructure(track, targetObj)
+  progressDialog:advancePhase(#Song.tracks)
+  progressDialog:setStatus('Exporting track ' .. track.name)
+
   local comment = ''
   if (track.output_delay ~= 0) then
     comment = comment .. "Delay: " .. track.output_delay
@@ -435,8 +466,6 @@ function DawProject:addTrackToStructure(track, targetObj)
 end
 
 function DawProject:getParentTracksRecursively(parentTrackName, trackObjs)
-  fancyStatus:show_status('Exporting track structure to .dawproject' .. Helpers:generateStatusAnimation())
-
   for _objectIndex = 1, Song.sequencer_track_count do
     local _track = Song:track(_objectIndex)
     if (_track.output_routing == parentTrackName) then
@@ -451,6 +480,8 @@ function DawProject:getParentTracksRecursively(parentTrackName, trackObjs)
 end
 
 function DawProject:generateParentTracksStructureDataForXML(trackName)
+  progressDialog:setPhase('Exporting tracks', 0.55, 0.85)
+
   -- add tracks and groups
   local trackObjs = self:getParentTracksRecursively(trackName, {})
   -- add sends
@@ -519,7 +550,6 @@ function DawProject:generateDevicesForXML(track)
   end
 
   coroutine.yield()
-  fancyStatus:show_status('Exporting track structure to .dawproject' .. Helpers:generateStatusAnimation())
 
   local numDevices = #track.devices
   for deviceIndex = 2, numDevices do
@@ -534,6 +564,8 @@ function DawProject:generateDevicesForXML(track)
 end
 
 function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterIdPrefix, deviceRole, trackIndex)
+  progressDialog:setStatus('Exporting plugin ' .. device.name)
+
   local parameterChunkData = DeviceHelpers:getParameterChunk(device)
   local deviceId = DeviceHelpers:getActivePresetDataContent(device, 'PluginIdentifier')
 
@@ -544,7 +576,6 @@ function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterId
   if (parameterChunkData ~= nil and deviceId ~= nil) then
     local binParameterChunkData = Helpers:base64ToString(parameterChunkData)
     coroutine.yield()
-    fancyStatus:show_status('Exporting track structure to .dawproject' .. Helpers:generateStatusAnimation())
 
     local attr = {
       deviceID = deviceId,
@@ -598,7 +629,6 @@ function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterId
         end
 
         coroutine.yield()
-        fancyStatus:show_status('Exporting track structure to .dawproject' .. Helpers:generateStatusAnimation())
 
         self.toolPluginCache:set(device.device_path, pluginInfo)
 
@@ -610,6 +640,7 @@ function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterId
           binParameterChunkData = DeviceHelpers:convertBinaryToVst2Preset(pluginInfo, presetName, binParameterChunkData)
         else
           -- for now skip vst2 plugins with wrong id
+          print('warning: VST2 plugin is missing in the export, since its id is unknown:', device.name)
           attr.deviceID = nil
         end
       end
@@ -658,7 +689,6 @@ function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterId
       devicesObj[#devicesObj].AuPlugin._attr.id = 'plugin' .. trackIndex .. '-' .. #devicesObj
     end
     coroutine.yield()
-    fancyStatus:show_status('Exporting track structure to .dawproject' .. Helpers:generateStatusAnimation())
   end
 end
 
@@ -719,15 +749,24 @@ function DawProject:export()
     return
   end
 
+  progressDialog:start('Export', function()
+    if (process and process:running()) then
+      process:stop()
+    end
+  end)
+
   process = ProcessSlicer(
     function()
       local xml2lua = require("lib/xml2lua/xml2lua")
 
-      local yieldCallback = function()
+      local yieldCallback = function(fraction)
+        if (fraction ~= nil) then
+          progressDialog:setPhaseProgress(fraction)
+        end
         coroutine.yield()
-        fancyStatus:show_status('Exporting note data to .dawproject' .. Helpers:generateStatusAnimation())
       end
 
+      progressDialog:setPhase('Reading notes and automation', 0, 0.35)
       yieldCallback()
       noteAbstraction = NoteAbstraction()
       local songEvents = noteAbstraction:generateSongEvents(yieldCallback)
@@ -771,6 +810,10 @@ function DawProject:export()
         }
       }
 
+      -- show the next steps before these block for a moment
+      progressDialog:setPhase('Writing project file', 0.93, 0.97)
+      yieldCallback()
+
       local fileContent = xml2lua.toXml(projectStructure)
       fileContent = '<?xml version="1.0" encoding="UTF-8"?>\n' .. fileContent
 
@@ -791,6 +834,9 @@ function DawProject:export()
       fileContent = '<?xml version="1.0" encoding="UTF-8"?>\n' .. fileContent
       Helpers:writeFile(TempDir .. "/metadata.xml", fileContent)
 
+      progressDialog:setPhase('Packing .dawproject file', 0.97, 1)
+      yieldCallback()
+
       os.execute(string.format(ZipPackCommand, '../dawproject.zip', '*'))
       os.move('./dawproject.zip', filePath)
 
@@ -798,8 +844,11 @@ function DawProject:export()
         self:clearTempDirectory()
       end
     end,
-    function() fancyStatus:show_status("Export done!") end
+    function() progressDialog:finish('Export done!') end
   )
+  process:set_error_callback(function(errorMessage)
+    progressDialog:fail('Export failed!', errorMessage)
+  end)
 
   process:start()
 end
@@ -853,19 +902,27 @@ function DawProject:__init()
           process:stop()
         end
         self:clearTempDirectory()
+        progressDialog:start('Convert to Redux', function()
+          if (process and process:running()) then
+            process:stop()
+          end
+        end)
         process = ProcessSlicer(
           function()
             Song:describe_batch_undo('Convert all sample instruments to Redux', 10000)
             for index = 1, #Song.instruments do
               coroutine.yield()
-              fancyStatus:show_status("Converting instrument #" ..
-                index .. " to Redux" .. Helpers:generateStatusAnimation())
+              progressDialog:setStatus('Converting instrument #' .. index .. ' of ' .. #Song.instruments .. ' to Redux')
+              progressDialog:setProgress((index - 1) / #Song.instruments)
               Song.selected_instrument_index = index
               ReduxPluginHelpers:convertCurrentInstrumentToRedux()
             end
           end,
-          function() fancyStatus:show_status("Conversion done!") end
+          function() progressDialog:finish('Conversion done!') end
         )
+        process:set_error_callback(function(errorMessage)
+          progressDialog:fail('Conversion failed!', errorMessage)
+        end)
         process:start()
       end)
     end
@@ -932,10 +989,11 @@ function DawProject:__init()
       process:stop()
       process = nil
     end
+    progressDialog:close()
     Notifiers:remove(Song.selected_instrument_index_observable, instrSwitchListener)
   end
 
-  fancyStatus = FancyStatusMessage()
+  progressDialog = ProgressDialog()
 
   Notifiers:add(Tool.app_idle_observable, toolIdle)
   Notifiers:add(Tool.app_new_document_observable, newDocumentListener)

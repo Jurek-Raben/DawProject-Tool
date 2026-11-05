@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Create release build
         run: |
@@ -31,7 +33,7 @@ jobs:
         id: get_msg
         run: |
           msg=$(git log -2 --pretty=format:%B | tail -n1)
-          echo "::set-output name=body::$msg"
+          echo "body=$msg" >> "$GITHUB_OUTPUT"
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
