@@ -144,7 +144,7 @@ A DAW can't load Renoise devices. After the health check you can choose which of
 - Gainer devices -> MUtility VST3
 - EQ 5 devices -> UVI Shade VST3, ZL Equalizer 2 VST3 or MEqualizer VST3. If several are installed you can select one in the dialog, by default in this order. On Linux ZL Equalizer 2 is available. The Q factor in the dialog makes the filters of the exported EQs narrower or wider.
 - EQ 10 devices -> UVI Shade VST3 or ZL Equalizer 2 VST3, on Linux ZL Equalizer 2. The ear guard limiter of Shade is disabled. The conversion of the bandwidth is an approximation.
-- Compressor and Bus Compressor devices -> MCompressor VST3, disabled by default
+- Compressor and Bus Compressor devices -> ZL Compressor VST3 or MCompressor VST3, on Linux ZL Compressor. Disabled by default.
 
 The plugins are named like the devices in Renoise, with their position on the track, e.g. `EQ 5 pos 2`.
 

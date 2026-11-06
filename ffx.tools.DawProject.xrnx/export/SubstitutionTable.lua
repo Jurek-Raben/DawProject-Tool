@@ -14,11 +14,14 @@ require('export/EqParameters')
 require('export/MEqualizerSubstitution')
 require('export/ShadeSubstitution')
 require('export/ZlEqualizerSubstitution')
+require('export/CompressorParameters')
 require('export/MCompressorSubstitution')
+require('export/ZlCompressorSubstitution')
 
 local MELDA_DOWNLOAD_URL = 'https://www.meldaproduction.com/downloads'
 local UVI_SHADE_DOWNLOAD_URL = 'https://www.uvi.net/shade'
 local ZL_EQUALIZER_DOWNLOAD_URL = 'https://zl-audio.github.io/plugins'
+local ZL_COMPRESSOR_DOWNLOAD_URL = 'https://zl-audio.github.io/plugins/zlcompressor/'
 
 -- create gets the Renoise device and the config, or the track for a part of the track itself
 local MUTILITY_FOR_PRE_MIXER = {
@@ -70,18 +73,32 @@ local ZL_EQUALIZER_FOR_EQ10 = {
   create = function(device, config) return ZlEqualizerSubstitution(device, config, EQ10_LAYOUT) end,
 }
 
+local ZL_COMPRESSOR_FOR_COMPRESSOR = {
+  pluginName = 'ZL Compressor (VST3)',
+  classId = ZL_COMPRESSOR_CLASS_ID,
+  downloadUrl = ZL_COMPRESSOR_DOWNLOAD_URL,
+  create = function(device) return ZlCompressorSubstitution(device, COMPRESSOR_SCALES) end,
+}
+
+local ZL_COMPRESSOR_FOR_BUS_COMPRESSOR = {
+  pluginName = 'ZL Compressor (VST3)',
+  classId = ZL_COMPRESSOR_CLASS_ID,
+  downloadUrl = ZL_COMPRESSOR_DOWNLOAD_URL,
+  create = function(device) return ZlCompressorSubstitution(device, BUS_COMPRESSOR_SCALES) end,
+}
+
 local MCOMPRESSOR_FOR_COMPRESSOR = {
   pluginName = 'Melda MCompressor (VST3)',
   classId = MCOMPRESSOR_CLASS_ID,
   downloadUrl = MELDA_DOWNLOAD_URL,
-  create = function(device) return MCompressorSubstitution:createForCompressor(device) end,
+  create = function(device) return MCompressorSubstitution(device, COMPRESSOR_SCALES) end,
 }
 
 local MCOMPRESSOR_FOR_BUS_COMPRESSOR = {
   pluginName = 'Melda MCompressor (VST3)',
   classId = MCOMPRESSOR_CLASS_ID,
   downloadUrl = MELDA_DOWNLOAD_URL,
-  create = function(device) return MCompressorSubstitution:createForBusCompressor(device) end,
+  create = function(device) return MCompressorSubstitution(device, BUS_COMPRESSOR_SCALES) end,
 }
 
 -- The targets of an operating system are ordered by priority, the first installed one is used.
@@ -125,13 +142,21 @@ local SUBSTITUTIONS = {
     configKey = 'substituteCompressor',
     title = 'Compressor devices',
     devicePath = 'Audio/Effects/Native/Compressor',
-    targets = { mac = { MCOMPRESSOR_FOR_COMPRESSOR }, win = { MCOMPRESSOR_FOR_COMPRESSOR } },
+    targets = {
+      mac = { ZL_COMPRESSOR_FOR_COMPRESSOR, MCOMPRESSOR_FOR_COMPRESSOR },
+      win = { ZL_COMPRESSOR_FOR_COMPRESSOR, MCOMPRESSOR_FOR_COMPRESSOR },
+      linux = { ZL_COMPRESSOR_FOR_COMPRESSOR },
+    },
   },
   {
     configKey = 'substituteBusCompressor',
     title = 'Bus Compressor devices',
     devicePath = 'Audio/Effects/Native/Bus Compressor',
-    targets = { mac = { MCOMPRESSOR_FOR_BUS_COMPRESSOR }, win = { MCOMPRESSOR_FOR_BUS_COMPRESSOR } },
+    targets = {
+      mac = { ZL_COMPRESSOR_FOR_BUS_COMPRESSOR, MCOMPRESSOR_FOR_BUS_COMPRESSOR },
+      win = { ZL_COMPRESSOR_FOR_BUS_COMPRESSOR, MCOMPRESSOR_FOR_BUS_COMPRESSOR },
+      linux = { ZL_COMPRESSOR_FOR_BUS_COMPRESSOR },
+    },
   },
 }
 

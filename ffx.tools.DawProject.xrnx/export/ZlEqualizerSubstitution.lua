@@ -11,7 +11,6 @@
 
 ZL_EQUALIZER_CLASS_ID = 'ABCDEF019182FAEB5A6C697545717532'
 
-local VST3_HEADER_SIZE = 48
 local NUM_PLUGIN_BANDS = 24
 
 -- The ids of band 1, the ones of the following bands are consecutive
@@ -35,6 +34,9 @@ local MAX_Q = 25
 
 local DEFAULT_FREQUENCY = 1000
 
+-- The Q curves are calibrated for MEqualizer. Compared by ear, this plugin needs a lower Q.
+local Q_CALIBRATION = 0.81
+
 -- Parameters which all bands have in common
 local COMMON_BAND_PARAMETERS = {
   attack = 100, dynamic_learn = 0, dynamic_on = 0, dynamic_relative = 0, dynamic_rms_length = 0,
@@ -54,10 +56,6 @@ local INTERFACE_PARAMETERS = {
   fft_speed = 2, fft_stereo = 0, fft_tilt = 3,
 }
 
--- JUCE stores the state of its bypass parameter behind the state of the plugin
-local JUCE_PRIVATE_DATA = string.rep(string.char(0), 9) .. 'JUCEPrivateData' ..
-    string.char(0, 1, 1) .. 'Bypass' .. string.char(0, 1, 1, 3, 0, 0x1d, 0, 0, 0, 0, 0, 0, 0) .. 'JUCEPrivateData'
-
 local function clampToNormalized(value)
   return math.max(0, math.min(value, 1))
 end
@@ -68,34 +66,6 @@ local function normalizeLogMidRange(value, minValue, midValue, maxValue)
     return clampToNormalized(math.log(math.max(value, minValue) / minValue) / (2 * math.log(midValue / minValue)))
   end
   return clampToNormalized(0.5 + math.log(value / midValue) / (2 * math.log(maxValue / midValue)))
-end
-
-local function createParameterXml(id, value)
-  return '<PARAM id="' .. id .. '" value="' .. MeldaPreset:formatNumber(value) .. '"/>'
-end
-
-local function appendParameters(xmlParts, parameters)
-  for id, value in pairs(parameters) do
-    table.insert(xmlParts, createParameterXml(id, value))
-  end
-end
-
-local function createPresetFile(settingsXml)
-  local state = 'VC2!' .. Helpers:intToBinaryLE(string.len(settingsXml), 4) .. settingsXml .. JUCE_PRIVATE_DATA
-  local stateSize = string.len(state)
-  local listOffset = VST3_HEADER_SIZE + stateSize
-
-  return table.concat({
-    'VST3',
-    Helpers:intToBinaryLE(1, 4),
-    ZL_EQUALIZER_CLASS_ID,
-    Helpers:intToBinaryLE(listOffset, 8),
-    state,
-    'List',
-    Helpers:intToBinaryLE(2, 4),
-    'Comp', Helpers:intToBinaryLE(VST3_HEADER_SIZE, 8), Helpers:intToBinaryLE(stateSize, 8),
-    'Cont', Helpers:intToBinaryLE(listOffset, 8), Helpers:intToBinaryLE(0, 8),
-  })
 end
 
 
@@ -115,7 +85,7 @@ end
 function ZlEqualizerSubstitution:getBandQ(band, bandwidth)
   local q = self.eq:isShelf(band) and MeldaScales:shelfBandwidthToQ(bandwidth) or
       MeldaScales:peakBandwidthToQ(bandwidth)
-  return math.max(MIN_Q, math.min(self.eq:applyQFactor(q), MAX_Q))
+  return math.max(MIN_Q, math.min(self.eq:applyQFactor(q * Q_CALIBRATION), MAX_Q))
 end
 
 function ZlEqualizerSubstitution:getFilterType(band)
@@ -133,31 +103,31 @@ function ZlEqualizerSubstitution:appendBandParameters(xmlParts, band)
   local isUsed = band <= self.eq.numBands
 
   for id, value in pairs(COMMON_BAND_PARAMETERS) do
-    table.insert(xmlParts, createParameterXml(id .. suffix, value))
+    table.insert(xmlParts, JucePreset:createParameterXml(id .. suffix, value))
   end
 
-  table.insert(xmlParts, createParameterXml('dynamic_bypass' .. suffix, isUsed and 1 or 0))
-  table.insert(xmlParts, createParameterXml('filter_status' .. suffix, isUsed and FILTER_STATUS_ON or FILTER_STATUS_OFF))
-  table.insert(xmlParts, createParameterXml('filter_type' .. suffix, isUsed and self:getFilterType(band) or FILTER_TYPE_PEAK))
-  table.insert(xmlParts, createParameterXml('freq' .. suffix, isUsed and self.eq:getValue('frequency', band) or DEFAULT_FREQUENCY))
-  table.insert(xmlParts, createParameterXml('gain' .. suffix, isUsed and self.eq:getValue('gain', band) or 0))
-  table.insert(xmlParts, createParameterXml('q' .. suffix,
+  table.insert(xmlParts, JucePreset:createParameterXml('dynamic_bypass' .. suffix, isUsed and 1 or 0))
+  table.insert(xmlParts, JucePreset:createParameterXml('filter_status' .. suffix, isUsed and FILTER_STATUS_ON or FILTER_STATUS_OFF))
+  table.insert(xmlParts, JucePreset:createParameterXml('filter_type' .. suffix, isUsed and self:getFilterType(band) or FILTER_TYPE_PEAK))
+  table.insert(xmlParts, JucePreset:createParameterXml('freq' .. suffix, isUsed and self.eq:getValue('frequency', band) or DEFAULT_FREQUENCY))
+  table.insert(xmlParts, JucePreset:createParameterXml('gain' .. suffix, isUsed and self.eq:getValue('gain', band) or 0))
+  table.insert(xmlParts, JucePreset:createParameterXml('q' .. suffix,
     isUsed and self:getBandQ(band, self.eq:getValue('bandwidth', band)) or MID_Q))
 end
 
 function ZlEqualizerSubstitution:createPresetData()
-  local xmlParts = { '<?xml version="1.0" encoding="UTF-8"?>\n<ZLCompressorParaState><ZLEqualizerParameters>' }
+  local xmlParts = { '<ZLCompressorParaState><ZLEqualizerParameters>' }
 
   for band = 1, NUM_PLUGIN_BANDS do
     self:appendBandParameters(xmlParts, band)
   end
-  appendParameters(xmlParts, GLOBAL_PARAMETERS)
+  JucePreset:appendParameters(xmlParts, GLOBAL_PARAMETERS)
 
   table.insert(xmlParts, '</ZLEqualizerParameters><ZLEqualizerNAParameters>')
-  appendParameters(xmlParts, INTERFACE_PARAMETERS)
+  JucePreset:appendParameters(xmlParts, INTERFACE_PARAMETERS)
   table.insert(xmlParts, '</ZLEqualizerNAParameters></ZLCompressorParaState>')
 
-  return createPresetFile(table.concat(xmlParts))
+  return JucePreset:create(ZL_EQUALIZER_CLASS_ID, table.concat(xmlParts))
 end
 
 function ZlEqualizerSubstitution:mapAutomationValue(parameter, parameterNum, automationValue)
