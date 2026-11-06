@@ -25,7 +25,7 @@ Please also read my suggestions for the Renoise API below, the tool requires bin
 - Progress dialog with cancel button, a list of all warnings and errors, and an expandable log
 - Health check before the export, with instructions for fixing problems on your operating system
 
-The master track always gets a limiter as last device, with a threshold of -0.2 dB and a release of 60 ms. It is a generic device of the format, so the DAW chooses its own limiter.
+The master track always gets a limiter as last device, with a threshold of -0.2 dB and a release of 60 ms. It is a generic device of the format, so the DAW chooses its own limiter. Not every DAW has to support it.
 
 #### Workarounds thru helper tools
 
@@ -116,6 +116,12 @@ You can also run the health check of a helper tool manually, optionally with the
 
 To really load a plugin, leave out `--healthcheck`. If it works, the output contains the infos as JSON between `@@VSTINFO_BEGIN@@` and `@@VSTINFO_END@@`. Otherwise you will see the actual error message.
 
+The VST3 tool can also list the scales of the parameters, optionally after loading a preset. This is useful for adding a new plugin substitution. Plugins that create parameters depending on their state, like UVI Shade, need the preset. On other systems than macOS such a plugin might not finish loading the state.
+
+```bash
+./vst3info-tool-mac-arm "/Library/Audio/Plug-Ins/VST3/MyPlugin.vst3" --parameter-values --preset "MyPreset.vstpreset"
+```
+
 ## Reporting problems
 
 If an export fails or sounds wrong, please report it in the [Renoise forum](https://forum.renoise.com/). The most helpful thing is the complete list of warnings and errors:
@@ -136,17 +142,31 @@ If possible, also attach the song, or a small song that shows the same problem.
 A song has to fulfill the following requirements for a working export:
 
 - The Instr. Automation Device has to be placed onto the track where the target instrument is playing.
-- The width of the pre-mixer is not exported. Pre-mixer gain and panning, Gainer and EQ 5 devices are only exported with the plugin substitutions below.
+- The width of the pre-mixer is not exported. Pre-mixer gain and panning, Gainer, EQ 5, EQ 10, Compressor and Bus Compressor devices are only exported with the plugin substitutions below.
 
 ## Plugin substitutions
 
-A DAW can't load Renoise devices. After the health check you can choose which of them are exported as plugin instead. Only the devices that are used in the song are listed, without any of them the dialog is skipped. The presets are generated and the automation is converted. If a plugin is not installed, its option is disabled. You can get the plugins from the [MeldaProduction downloads](https://www.meldaproduction.com/downloads) and from [UVI](https://www.uvi.net/shade). On Linux only [ZL Equalizer 2](https://zl-audio.github.io/plugins) is offered. The available substitutions per operating system are listed in `export/SubstitutionTable.lua`.
+A DAW can't load Renoise devices. After the health check you can choose which of them are exported as plugin instead. Only the devices that are used in the song are listed, together with their number of occurrences. Without any of them the dialog is skipped. The presets are generated and the automation is converted.
 
-- Track pre gain, panning and delay -> MUtility VST3, using the +3 dB pan law of Renoise. Only added to tracks using one of these. By default the track delay shifts the MIDI notes in the exported clips. In the dialog you can select a delay inside of MUtility instead, a negative one is reported as latency there.
-- Gainer devices -> MUtility VST3
-- EQ 5 devices -> UVI Shade VST3, ZL Equalizer 2 VST3 or MEqualizer VST3. If several are installed you can select one in the dialog, by default in this order. On Linux ZL Equalizer 2 is available. The Q factor in the dialog makes the filters of the exported EQs narrower or wider.
-- EQ 10 devices -> UVI Shade VST3 or ZL Equalizer 2 VST3, on Linux ZL Equalizer 2. The ear guard limiter of Shade is disabled. The conversion of the bandwidth is an approximation.
-- Compressor and Bus Compressor devices -> ZL Compressor VST3 or MCompressor VST3, on Linux ZL Compressor. Disabled by default.
+If a plugin is not installed, it is displayed as not installed with a download button. An option without any installed plugin is disabled. If several plugins are installed for an option, you can select one in the dialog, by default in the order listed below. All the choices are saved.
+
+| Renoise | macOS, Windows | Linux | Default |
+| --- | --- | --- | --- |
+| Track pre gain, panning and delay | MUtility | - | on |
+| Gainer | MUtility | - | on |
+| EQ 5 | UVI Shade, ZL Equalizer 2, MEqualizer | ZL Equalizer 2 | on |
+| EQ 10 | UVI Shade, ZL Equalizer 2 | ZL Equalizer 2 | on |
+| Compressor | ZL Compressor, MCompressor | ZL Compressor | off |
+| Bus Compressor | ZL Compressor, MCompressor | ZL Compressor | off |
+
+All of them are VST3 plugins, available from [MeldaProduction](https://www.meldaproduction.com/downloads), [UVI](https://www.uvi.net/shade) and [ZL Audio](https://zl-audio.github.io/plugins). The table above is defined in `export/SubstitutionTable.lua`.
+
+- **Pre gain and panning:** MUtility is placed before the effects of the track, using the +3 dB pan law of Renoise. It is only added to tracks using these settings.
+- **Track delay:** By default the track delay shifts the MIDI notes in the exported clips, so it has no effect on group and send tracks. In the dialog you can select a delay inside of MUtility instead, which also works on these tracks. A negative delay is reported as latency there. Without the substitution of the pre mixer, the option `addTrackDelayToClips` decides about shifting the notes.
+- **Gainer:** The phase inversion of the channels is also exported.
+- **EQ 5 and EQ 10:** The first and the last band are exported as shelves, the others as peak filters. The ear guard limiter of Shade is disabled. The conversion of the bandwidth is an approximation, so each of both EQs has a Q factor in the dialog from x 0.25 to x 4, which makes the filters narrower or wider.
+- **Compressor and Bus Compressor:** ZL Compressor uses its Classic style.
+- **Automation:** The automation of the substitutions assumes how Renoise scales its normalized values. This is not measured for every parameter yet.
 
 The plugins are named like the devices in Renoise, with their position on the track, e.g. `EQ 5 pos 2`.
 
@@ -194,16 +214,27 @@ The tools require Rust / cargo to be installed on the system. The VST3 tool also
 
 For packing the tool itself, create a `build` directory and use `./build_for_mac_linux.sh`. Windows users can test the same script, which should work in Windows 11 at least. In contrast to the release builds, this package still contains the development-only code.
 
+#### Adding a plugin substitution
+
+1. Read the parameter ids and scales of the plugin with the VST3 tool, see [Testing a helper tool](#testing-a-helper-tool).
+2. Save a preset in the plugin to learn the class id and the format of its state.
+3. Add a class in `export/` which creates the preset data and maps the automation values. `EqParameters` and `CompressorParameters` read the Renoise devices, `MeldaPreset` and `JucePreset` create preset files.
+4. Add the target to `export/SubstitutionTable.lua`, and its option to `lib/ToolConfig.lua` for a new device.
+
+#### Unique preset file names
+
+Bitwig caches the files of a project by their name. It would load the presets of a previous export with the same names, even after importing the new one. So all the preset file names contain a timestamp of the export.
+
 #### Source code structure
 
 - `main.lua` - The entry point: menus, options and the listeners of Renoise
-- `lib/` - Everything independent of the direction, like the temporary files, background tasks, dialogs and helpers
-- `export/` - The export, one class per topic. `DawProjectExporter` is the sequence, `TrackLayout` knows how tracks are split by instrument, and the others generate the tracks, devices, automation and arrangement
+- `lib/` - The helpers, like the temporary files, background tasks, dialogs and preset files. Some of them are currently only used by the export, like `NoteAbstraction`
+- `export/` - The export, one class per topic. `DawProjectExporter` is the sequence, `TrackLayout` knows how tracks are split by instrument, and the others generate the tracks, devices, automation and arrangement. `SubstitutionTable` lists the plugin substitutions
 - `import/` - The future import, not available in the menu yet
 
 #### Releases
 
-Every push to `main` builds the helper tools for all platforms and packages the tool. The version comes from `manifest.xml`: a new version creates a new release, otherwise the package of the existing release is replaced. Code between `-- @build:skip-start` and `-- @build:skip-end` is removed from the package.
+Every push to `main` builds the helper tools for all platforms and packages the tool. The version comes from `manifest.xml`: a new version creates a new release, otherwise the package of the existing release is replaced. Code between `-- @build:skip-start` and `-- @build:skip-end` is removed from the package, and the placeholder `@build:version@` in `main.lua` is replaced with the version.
 
 #### Suggestions for the API
 
