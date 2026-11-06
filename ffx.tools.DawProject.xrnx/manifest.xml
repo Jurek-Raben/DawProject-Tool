@@ -2,11 +2,11 @@
 <RenoiseScriptingTool doc_version="0">
   <ApiVersion>6.2</ApiVersion>
   <Id>ffx.tools.DawProject</Id>
-  <Version>0.1.13</Version>
+  <Version>0.1.14</Version>
   <Author>Jurek Raben</Author>
   <Name>DAW Project Support</Name>
   <Category>Tools</Category>
-  <Description>Import or export .dawproject files</Description>
+  <Description>Export .dawproject files</Description>
   <Repository>https://github.com/Jurek-Raben/DawProject-Tool</Repository>
   <Homepage>https://www.renoise.com</Homepage>
 </RenoiseScriptingTool>

@@ -57,7 +57,7 @@ A song has to fulfill the following requirements for a working export:
 
 ## Disclaimer
 
-This Renoise tool currently **contains pre-built binaries of the VST info helper tools**. I built those on my macOS system using the recommended toolchains for Rust. If you are unsure you can build these yourself, or simply disable the usage in the tool's preferences. Building will require basic knowledge about how to setup a Rust dev environment. macOS should work best for that purpose.
+The release packages of this Renoise tool **contain pre-built binaries of the VST info helper tools**. These are built from this source code by the GitHub workflow of this repository. If you are unsure you can build these yourself, or simply disable the usage in the tool's preferences. Building will require basic knowledge about how to setup a Rust dev environment. macOS should work best for that purpose.
 
 So I am not responsible for any damage these binaries could do to your system and your data. Use at your own risk! However, the binaries appear to behave normally here.
 
@@ -83,7 +83,7 @@ Bitwig loads all the exports just fine, just like it should be. Studio One 7.2+ 
 
 #### Helper tools
 
-The tool can use VST2/3 info tools to extract the missing plugin infos, which I coded in Rust. There are pre-built binaries included in the `/bin` sub directory, pre-built for macOS (arm/intel ub2), windows x86_64, linux x86_64. Most likely you will need to disable SIP under macOS to make these tools startable, because these are not Apple aprroved in any way.
+The tool can use VST2/3 info tools to extract the missing plugin infos, which I coded in Rust. The release packages include pre-built binaries in the `/bin` sub directory, for macOS (arm/intel), windows x86_64 and linux x86_64. Most likely you will need to disable SIP under macOS to make these tools startable, because these are not Apple aprroved in any way.
 
 #### Manual workarounds
 
@@ -97,7 +97,11 @@ You can also decide to build the binary vst-tools by yourself.
 
 These tools try to circumvent the current limitations of the Renoise API. The VST2/VST3 tool will give detailed infos for a given plugin path. If you want to use those via the tool settings, you will have to build these as first step with `./build_vst_tools.sh`.
 
-The tools require Rust / cargo to be installed on the system.
+The tools require Rust / cargo to be installed on the system. The VST3 tool also requires the VST3 SDK under `vst3info-tool/vst3sdk`, see `.github/workflows/build.yml` for the used version.
+
+#### Releases
+
+Every push to `main` builds the helper tools for all platforms and packages the tool. The version comes from `manifest.xml`: a new version creates a new release, otherwise the package of the existing release is replaced. Code between `-- @build:skip-start` and `-- @build:skip-end` is removed from the package.
 
 #### Suggestions for the API
 

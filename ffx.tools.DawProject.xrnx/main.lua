@@ -1,9 +1,11 @@
+-- @build:skip-start
 _AUTO_RELOAD_DEBUG = function()
 end
+-- @build:skip-end
 --------------------------------------------------------------------------------
--- Daw Project
+-- Daw Project Export
 -- by Jurek Raben
--- v0.1.13
+-- v0.1.14
 --
 -- Licensed under CC Attribution-NonCommercial-ShareAlike 4.0 International
 -- Info here: https://creativecommons.org/licenses/by-nc-sa/4.0/
