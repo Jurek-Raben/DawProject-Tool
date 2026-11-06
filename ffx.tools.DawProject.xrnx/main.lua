@@ -24,9 +24,11 @@ require('lib/DeviceHelpers')
 require('lib/ReduxPluginHelpers')
 require('lib/Cache')
 require('lib/ProjectFiles')
+require('lib/MeldaPreset')
 require('lib/HealthCheck')
 require('lib/HealthCheckDialog')
 require('export/DawProjectExporter')
+require('export/SubstitutionDialog')
 require('import/DawProjectImporter')
 
 
@@ -38,6 +40,7 @@ Song = renoise.song() -- needs a refresh later
 Tool = renoise.tool()
 local progressDialog = nil
 local healthCheckDialog = nil
+local substitutionDialog = nil
 local backgroundTask = nil
 local config = {}
 
@@ -62,11 +65,28 @@ function DawProject:export()
   end)
   if (not success) then
     print('warning: Health check could not be prepared', checks)
+    self:configureSubstitutions()
+    return
+  end
+
+  healthCheckDialog:start(checks, function() self:configureSubstitutions() end)
+end
+
+function DawProject:configureSubstitutions()
+  -- nothing to choose on this operating system
+  if (#SubstitutionTable:getOptionsOfCurrentSystem() == 0) then
     self:startExport()
     return
   end
 
-  healthCheckDialog:start(checks, function() self:startExport() end)
+  substitutionDialog:start(
+    config,
+    function(configKey, isEnabled)
+      config[configKey] = isEnabled
+      self.configurator:setConfig(config)
+    end,
+    function() self:startExport() end
+  )
 end
 
 function DawProject:startExport()
@@ -202,11 +222,13 @@ function DawProject:__init()
     backgroundTask:stop()
     progressDialog:close()
     healthCheckDialog:close()
+    substitutionDialog:close()
     Notifiers:remove(Song.selected_instrument_index_observable, instrSwitchListener)
   end
 
   progressDialog = ProgressDialog()
   healthCheckDialog = HealthCheckDialog()
+  substitutionDialog = SubstitutionDialog()
   backgroundTask = BackgroundTask(progressDialog)
 
   Notifiers:add(Tool.app_idle_observable, toolIdle)

@@ -1,6 +1,9 @@
 //! Creates the classes of a VST3 plugin and reads the infos of them.
 
 use crate::host_application;
+use crate::memory_stream::MemoryStream;
+use crate::message_pump;
+use crate::preset_file::PresetStates;
 use crate::vst3_strings::{string_from_utf8_buffer, string_from_utf16_buffer};
 use std::ffi::c_void;
 use std::mem::zeroed;
@@ -12,14 +15,16 @@ use vst3::Steinberg::Vst::{
     MediaTypes_::{kAudio, kEvent},
 };
 use vst3::Steinberg::{
-    FUnknown, IPluginBaseTrait, IPluginFactory, IPluginFactoryTrait, PClassInfo, kResultOk,
+    FUnknown, IBStream, IPluginBaseTrait, IPluginFactory, IPluginFactoryTrait, PClassInfo, kResultOk,
 };
-use vst3::{ComPtr, Interface};
+use vst3::{ComPtr, ComWrapper, Interface};
 
 const AUDIO_MODULE_CATEGORY: &str = "Audio Module Class";
 
 // The version of a class is only available through a newer factory interface
 const PLUGIN_VERSION: &str = "1.0.0";
+
+const CONTINUOUS_VALUE_INTERVALS: i32 = 40;
 
 pub struct PluginInfos {
     pub name: String,
@@ -35,6 +40,19 @@ pub struct ParameterInfos {
     pub id: u32,
     pub title: String,
     pub step_count: i32,
+    pub displayed_values: Vec<DisplayedValue>,
+}
+
+/// How the plugin displays a normalized value, this reveals the scale of a parameter.
+pub struct DisplayedValue {
+    pub normalized_value: f64,
+    pub text: String,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum DisplayedValues {
+    Skip,
+    Read,
 }
 
 struct AudioComponent {
@@ -42,7 +60,11 @@ struct AudioComponent {
     component: ComPtr<IComponent>,
 }
 
-pub fn inspect_plugin(factory: &ComPtr<IPluginFactory>) -> Result<PluginInfos, String> {
+pub fn inspect_plugin(
+    factory: &ComPtr<IPluginFactory>,
+    displayed_values: DisplayedValues,
+    preset_states: Option<PresetStates>,
+) -> Result<PluginInfos, String> {
     unsafe {
         let vendor = read_factory_vendor(factory)?;
         let AudioComponent { name, component } = create_audio_component(factory)?;
@@ -70,10 +92,14 @@ pub fn inspect_plugin(factory: &ComPtr<IPluginFactory>) -> Result<PluginInfos, S
         if has_separate_controller {
             connect_component_and_controller(&component, &controller);
         }
+        if let Some(preset_states) = preset_states {
+            load_preset_states(&component, &controller, preset_states)?;
+            message_pump::process_pending_messages();
+        }
         component.setActive(1);
 
         let parameter_count = controller.getParameterCount();
-        let parameters = read_parameters(&controller, parameter_count);
+        let parameters = read_parameters(&controller, parameter_count, displayed_values);
 
         // Cleanup in reverse order of the setup
         component.setActive(0);
@@ -93,6 +119,36 @@ pub fn inspect_plugin(factory: &ComPtr<IPluginFactory>) -> Result<PluginInfos, S
             parameters,
         })
     }
+}
+
+/// Some plugins only create parts of their parameters with a loaded state.
+unsafe fn load_preset_states(
+    component: &ComPtr<IComponent>,
+    controller: &ComPtr<IEditController>,
+    preset_states: PresetStates,
+) -> Result<(), String> {
+    let create_stream = |data: Vec<u8>| {
+        ComWrapper::new(MemoryStream::new(data))
+            .to_com_ptr::<IBStream>()
+            .ok_or("Failed to create a stream".to_string())
+    };
+
+    unsafe {
+        let component_stream = create_stream(preset_states.component_state.clone())?;
+        let result = component.setState(component_stream.as_ptr());
+        if result != kResultOk {
+            return Err(format!("The plugin rejected the preset: {:#x}", result));
+        }
+
+        let controller_view_stream = create_stream(preset_states.component_state)?;
+        controller.setComponentState(controller_view_stream.as_ptr());
+
+        if !preset_states.controller_state.is_empty() {
+            let controller_stream = create_stream(preset_states.controller_state)?;
+            controller.setState(controller_stream.as_ptr());
+        }
+    }
+    Ok(())
 }
 
 unsafe fn read_factory_vendor(factory: &ComPtr<IPluginFactory>) -> Result<String, String> {
@@ -220,6 +276,7 @@ unsafe fn disconnect_component_and_controller(
 unsafe fn read_parameters(
     controller: &ComPtr<IEditController>,
     parameter_count: i32,
+    displayed_values: DisplayedValues,
 ) -> Vec<ParameterInfos> {
     let mut parameters = Vec::new();
 
@@ -231,10 +288,42 @@ unsafe fn read_parameters(
                     id: parameter_info.id,
                     title: string_from_utf16_buffer(&parameter_info.title),
                     step_count: parameter_info.stepCount,
+                    displayed_values: if displayed_values == DisplayedValues::Read {
+                        read_displayed_values(controller, parameter_info.id, parameter_info.stepCount)
+                    } else {
+                        Vec::new()
+                    },
                 });
             }
         }
     }
 
     parameters
+}
+
+/// A stepped parameter is read at each of its steps, a continuous one at evenly spaced values.
+unsafe fn read_displayed_values(
+    controller: &ComPtr<IEditController>,
+    parameter_id: u32,
+    step_count: i32,
+) -> Vec<DisplayedValue> {
+    let interval_count = if step_count > 0 {
+        step_count
+    } else {
+        CONTINUOUS_VALUE_INTERVALS
+    };
+
+    (0..=interval_count)
+        .filter_map(|interval| {
+            let normalized_value = f64::from(interval) / f64::from(interval_count);
+            unsafe {
+                let mut text = zeroed();
+                let result = controller.getParamStringByValue(parameter_id, normalized_value, &mut text);
+                (result == kResultOk).then(|| DisplayedValue {
+                    normalized_value,
+                    text: string_from_utf16_buffer(&text),
+                })
+            }
+        })
+        .collect()
 }

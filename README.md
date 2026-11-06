@@ -40,7 +40,6 @@ Please also read my suggestions for the Renoise API below, the tool requires bin
 - No idea why VST3 preset loading fails in Cubase 14+. Might be the preset data itself. As a workaround, load the exported dawproject into S1 and then again export as dawproject. Bitwig exports also fail to load in Cubase. S1 uses an uncompressed zip type.
 - VST2 preset loading and mapping is buggy in Studio One currently and needs to be fixed.
 - Studio One will incorrectly set/interpret the parameter ids for AudioUnits. Therefore automation for AudioUnits currently is lost in Studio One.
-- Internal plugin substitution (mostly gain and panning), if there is a free VST3 with easily changeable preset data (not found yet).
 
 ## How to use / install
 
@@ -135,8 +134,18 @@ If possible, also attach the song, or a small song that shows the same problem.
 A song has to fulfill the following requirements for a working export:
 
 - The Instr. Automation Device has to be placed onto the track where the target instrument is playing.
-- Don't use pre-mixer gain and panning, if you did, replace it with MUtility VST3 or TrackControl VST3
-- Don't use the gainer device, if you did, replace it with MUtility VST3 or TrackControl VST3
+- The width of the pre-mixer is not exported. Pre-mixer gain and panning, Gainer and EQ 5 devices are only exported with the plugin substitutions below.
+
+## Plugin substitutions
+
+A DAW can't load Renoise devices. After the health check you can choose which of them are exported as plugin instead. The presets are generated and the automation is converted. If a plugin is not installed, its option is disabled. You can get the plugins from the [MeldaProduction downloads](https://www.meldaproduction.com/downloads) and from [UVI](https://www.uvi.net/shade). These plugins are not offered for Linux, so there the dialog is skipped. The available substitutions per operating system are listed in `export/SubstitutionTable.lua`.
+
+- Track pre gain and panning -> MUtility VST3, using the +3 dB pan law of Renoise. Only added to tracks with pre-mixer settings.
+- Gainer devices -> MUtility VST3
+- EQ 5 devices -> UVI Shade VST3 or MEqualizer VST3. If both are installed you can select one in the dialog, by default Shade is used. The ear guard limiter of Shade is disabled. The conversion of the bandwidth is an approximation.
+- Compressor and Bus Compressor devices -> MCompressor VST3, disabled by default
+
+The plugins are named like the devices in Renoise, with their position on the track, e.g. `EQ 5 pos 2`.
 
 ## Disclaimer
 

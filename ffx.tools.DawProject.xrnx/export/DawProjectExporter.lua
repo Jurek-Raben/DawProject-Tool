@@ -7,6 +7,7 @@
 -- Info here: https://creativecommons.org/licenses/by-nc-sa/4.0/
 -------------------------------------------------------------------------------
 
+require('export/PluginSubstitutions')
 require('export/TrackLayout')
 require('export/AutomationExporter')
 require('export/DeviceExporter')
@@ -36,7 +37,8 @@ function DawProjectExporter:export(filePath)
 
   self.progress:setPhase('Reading instruments of the tracks', 0, 0.1)
   yieldCallback()
-  local noteAbstraction = NoteAbstraction()
+  local substitutions = PluginSubstitutions(self.config)
+  local noteAbstraction = NoteAbstraction(substitutions)
   local layout = TrackLayout(self.config, noteAbstraction:collectInstrumentPools(yieldCallback))
 
   self.progress:setPhase('Reading notes and automation', 0.1, 0.35)
@@ -50,7 +52,7 @@ function DawProjectExporter:export(filePath)
   yieldCallback()
 
   local deviceExporter = DeviceExporter(self.config, self.progress, layout, pluginInfoCache,
-    automationEvents.parametersObj)
+    automationEvents.parametersObj, substitutions)
   local trackExporter = TrackExporter(self.progress, layout, deviceExporter)
   local arrangementExporter = ArrangementExporter(self.config, self.progress, layout)
 

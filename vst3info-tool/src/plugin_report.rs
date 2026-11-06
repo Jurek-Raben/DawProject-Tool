@@ -19,16 +19,31 @@ pub fn create_report(plugin: &PluginInfos) -> JsonValue {
     // The index is the position in the list of the plugin, so it has to stay stable while filtering
     for (index, parameter) in plugin.parameters.iter().enumerate() {
         if is_automatable_parameter(parameter) {
-            let _ = report["parameters"].push(object! {
+            let mut parameter_report = object! {
                 id: parameter.id,
                 index: index,
                 title: parameter.title.as_str(),
                 stepCount: parameter.step_count
-            });
+            };
+            if !parameter.displayed_values.is_empty() {
+                parameter_report["displayedValues"] = create_displayed_values_report(parameter);
+            }
+            let _ = report["parameters"].push(parameter_report);
         }
     }
 
     report
+}
+
+fn create_displayed_values_report(parameter: &ParameterInfos) -> JsonValue {
+    let mut displayed_values = JsonValue::new_array();
+    for displayed_value in &parameter.displayed_values {
+        let _ = displayed_values.push(object! {
+            normalized: displayed_value.normalized_value,
+            text: displayed_value.text.as_str()
+        });
+    }
+    displayed_values
 }
 
 /// Many plugins add a large number of parameters for receiving MIDI controllers.

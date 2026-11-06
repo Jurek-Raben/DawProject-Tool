@@ -28,7 +28,8 @@ class "NoteAbstraction"
 
 NoteAbstraction.automationCache = Cache()
 
-function NoteAbstraction:__init()
+function NoteAbstraction:__init(substitutions)
+  self.substitutions = substitutions
   self.automationCache = Cache()
   self.instrumentPools = {}
   self.visibleNoteColumns = {}
@@ -467,11 +468,17 @@ function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum,
   local usedTypes = {}
   local track = Song:track(trackNum)
 
-  for deviceIndex = 2, #track.devices do
+  for deviceIndex = 1, #track.devices do
     local device = track:device(deviceIndex)
     local targetDevice
     local eventInstrumentNum
     local deviceIndexString = tostring(deviceIndex)
+    local substitution = self.substitutions:findSubstitutionAtDeviceIndex(trackNum, deviceIndex)
+
+    -- the first device is the mixer, its automation only is available through a substitution
+    if (deviceIndex == 1 and substitution == nil) then
+      goto continue
+    end
 
     local getIndex = function(paramNum)
       return paramNum - 1
@@ -484,7 +491,9 @@ function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum,
       return self:findAutomationTargetInstrument(device, deviceIndex, track, trackNum, seqIndex, patternTrack)
     end
 
-    if (device.device_path == "Audio/Effects/Native/*Instr. Automation") then
+    if (substitution ~= nil) then
+      targetDevice = device
+    elseif (device.device_path == "Audio/Effects/Native/*Instr. Automation") then
       --local targetInstrumentNum = DeviceHelpers:getActivePresetDataContent(device, 'LinkedInstrument') + 1
       local targetInstrumentNum = getInstrNum()
 
@@ -570,22 +579,30 @@ function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum,
           for _, point in ipairs(automation.points) do
             local newPointValue = math.floor(point.value * 100000 + 0.5) / 100000
             if (lastPointValues[lastPointIndex] ~= newPointValue) then
-              table.insert(automationEvents,
-                {
-                  device = targetDevice,
-                  deviceIndex = deviceIndexString,
-                  instrumentNum = eventInstrumentNum,
-                  trackNum = trackNum,
-                  paramIndex = _paramIndex,
-                  type = _type,
-                  parameterName = parameter.name,
-                  timestamp = (lineOffset + point.time - 1) * 256,
-                  value = newPointValue,
-                  interpolation = automation.playmode == renoise.PatternTrackAutomation.PLAYMODE_POINTS and 'hold' or
-                      'linear',
-                  scaling = point.scaling
-                }
-              )
+              -- a substituted parameter can target other or even multiple parameters of the plugin
+              local targets = { { paramIndex = _paramIndex, name = parameter.name, value = newPointValue } }
+              if (substitution ~= nil) then
+                targets = substitution:mapAutomationValue(parameter, paramIndex, newPointValue)
+              end
+
+              for _, target in ipairs(targets) do
+                table.insert(automationEvents,
+                  {
+                    device = targetDevice,
+                    deviceIndex = deviceIndexString,
+                    instrumentNum = eventInstrumentNum,
+                    trackNum = trackNum,
+                    paramIndex = target.paramIndex,
+                    type = _type,
+                    parameterName = target.name,
+                    timestamp = (lineOffset + point.time - 1) * 256,
+                    value = target.value,
+                    interpolation = automation.playmode == renoise.PatternTrackAutomation.PLAYMODE_POINTS and 'hold' or
+                        'linear',
+                    scaling = point.scaling
+                  }
+                )
+              end
 
               lastPointValues[lastPointIndex] = newPointValue
             end

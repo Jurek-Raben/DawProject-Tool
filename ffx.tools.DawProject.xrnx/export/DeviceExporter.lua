@@ -9,12 +9,14 @@
 
 class "DeviceExporter"
 
-function DeviceExporter:__init(config, progress, layout, pluginInfoCache, automatedParameters)
+function DeviceExporter:__init(config, progress, layout, pluginInfoCache, automatedParameters, substitutions)
   self.config = config
   self.progress = progress
   self.layout = layout
   self.pluginInfoCache = pluginInfoCache
   self.automatedParameters = automatedParameters
+  self.substitutions = substitutions
+  self.exportId = os.date('%Y%m%d%H%M%S')
   self.instrIndexCache = Cache()
 end
 
@@ -36,24 +38,83 @@ function DeviceExporter:generateDevicesForXML(track)
 
   coroutine.yield()
 
+  -- the pre mixer of Renoise works before all the effects of the track
+  local preMixerSubstitution = self.substitutions:findPreMixerSubstitution(trackIndex)
+  if (preMixerSubstitution ~= nil) then
+    self:addSubstitutedDeviceObj(devicesObj, preMixerSubstitution, track:device(1).display_name .. ' Pre pos 1', true,
+      self:createPresetName('fx-tr' .. trackIndex .. '-premixer'), 'paramid-' .. trackIndex .. '-1', trackIndex)
+  end
+
   local numDevices = #track.devices
   for deviceIndex = 2, numDevices do
     local device = track:device(deviceIndex)
-    local deviceSavePath = 'fx-tr' ..
-        trackIndex .. '-no' .. deviceIndex .. '-' .. Helpers:prepareFilenameForXML(device.name)
+    local deviceSavePath = self:createPresetName('fx-tr' ..
+      trackIndex .. '-no' .. deviceIndex .. '-' .. Helpers:prepareFilenameForXML(device.name))
     local parameterIdPrefix = 'paramid-' .. trackIndex .. '-' .. deviceIndex
-    self:addDeviceObj(devicesObj, device, deviceSavePath, parameterIdPrefix, 'audioFX', trackIndex)
+    local substitution = self.substitutions:findDeviceSubstitution(device, trackIndex, deviceIndex)
+    if (substitution ~= nil) then
+      self:addSubstitutedDeviceObj(devicesObj, substitution, device.display_name .. ' pos ' .. deviceIndex,
+        device.is_active, deviceSavePath, parameterIdPrefix, trackIndex)
+    else
+      self:addDeviceObj(devicesObj, device, deviceSavePath, parameterIdPrefix, 'audioFX', trackIndex)
+    end
   end
 
   return devicesObj
+end
+
+-- Bitwig caches the files of a project by their name. It would load the presets of a previous
+-- export with the same names, so the names have to be unique for each export.
+function DeviceExporter:createPresetName(name)
+  return name .. '-' .. self.exportId
+end
+
+-- A part of Renoise that is exported as plugin, with a generated preset
+function DeviceExporter:addSubstitutedDeviceObj(devicesObj, substitution, name, isActive, deviceSavePath,
+                                                parameterIdPrefix, trackIndex)
+  self.progress:setStatus('Exporting ' .. name .. ' as ' .. substitution.pluginName)
+
+  local presetPath = "plugins/" .. deviceSavePath .. ".vstpreset"
+  Helpers:writeFile(TempDir .. "/" .. presetPath, substitution:createPresetData())
+
+  local deviceNumber = #devicesObj
+  devicesObj[deviceNumber + 1] = {
+    Vst3Plugin = {
+      _attr = {
+        id = 'plugin' .. trackIndex .. '-' .. (deviceNumber + 1),
+        deviceID = substitution.classId,
+        deviceRole = 'audioFX',
+        -- the plugin is identified by the deviceID, and some DAWs only display the deviceName
+        deviceName = Helpers:prepareNameForXML(name),
+        name = Helpers:prepareNameForXML(name),
+        loaded = "true"
+      },
+      Enabled = {
+        _attr = {
+          id = 'enabled' .. trackIndex .. '-' .. deviceNumber,
+          value = isActive and 'true' or 'false',
+        }
+      },
+      State = {
+        _attr = {
+          path = presetPath,
+          external = "false"
+        }
+      },
+      Parameters = {
+        RealParameter = self.automatedParameters[parameterIdPrefix]
+      }
+    }
+  }
+  coroutine.yield()
 end
 
 -- trackId is the id of the target track, which differs from the Renoise track on split tracks
 function DeviceExporter:addInstrumentDevicesForXML(devicesObj, instr, instrIndex, trackIndex, trackId)
   -- vsti
   if (instr and instr.plugin_properties and instr.plugin_properties.plugin_device) then
-    local deviceSavePath = 'instr-tr' .. trackIndex .. '-no' .. instrIndex ..
-        '-' .. Helpers:prepareFilenameForXML(instr.name)
+    local deviceSavePath = self:createPresetName('instr-tr' .. trackIndex .. '-no' .. instrIndex ..
+      '-' .. Helpers:prepareFilenameForXML(instr.name))
     local parameterIdPrefix = 'paramid-' .. trackIndex .. '-i' .. instrIndex
     --print('matching instr parameterIdPrefix', parameterIdPrefix)
 
@@ -70,8 +131,8 @@ function DeviceExporter:addInstrumentDevicesForXML(devicesObj, instr, instrIndex
 
   -- native instr to redux
   if (self.config['convertToRedux'] == true and instr and instr.plugin_properties.plugin_device == nil) then
-    local deviceSavePath = 'instr-tr' ..
-        trackIndex .. '-no' .. instrIndex .. '-' .. Helpers:prepareFilenameForXML(instr.name) .. '-reduxed'
+    local deviceSavePath = self:createPresetName('instr-tr' ..
+      trackIndex .. '-no' .. instrIndex .. '-' .. Helpers:prepareFilenameForXML(instr.name) .. '-reduxed')
     -- convert Renoise instruments to Redux VST3
     ReduxPluginHelpers:generateReduxPresetDataForInstrument(instr, TempDir .. "/plugins/" .. deviceSavePath)
 

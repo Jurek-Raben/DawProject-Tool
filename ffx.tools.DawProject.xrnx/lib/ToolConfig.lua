@@ -14,6 +14,11 @@ ToolConfig.defaults = {
   exportVST3 = true,
   addTrackDelayToClips = true,
   splitTracksByInstrument = true,
+  substitutePreMixer = true,
+  substituteGainer = true,
+  substituteEq5 = true,
+  substituteCompressor = false,
+  substituteBusCompressor = false,
   devMode = true,
   useVST2InfoTool = true,
   useVST3InfoTool = true
@@ -29,6 +34,15 @@ ToolConfig.descriptions = {
   useVST2InfoTool = { type = "boolean", txt = "Hacky workaround using a binary tool for plugin id extraction" },
   useVST3InfoTool = { type = "boolean", txt = "Hacky workaround using a binary tool for parameter id extraction" },
 }
+
+-- MeldaProduction has no plugins for Linux, see the substitution table
+if (os.platform() ~= 'LINUX') then
+  ToolConfig.descriptions.substitutePreMixer = { type = "boolean", txt = "Export the track pre gain and panning as Melda MUtility" }
+  ToolConfig.descriptions.substituteGainer = { type = "boolean", txt = "Export Gainer devices as Melda MUtility" }
+  ToolConfig.descriptions.substituteEq5 = { type = "boolean", txt = "Export EQ 5 devices as Melda MEqualizer" }
+  ToolConfig.descriptions.substituteCompressor = { type = "boolean", txt = "Export Compressor devices as Melda MCompressor" }
+  ToolConfig.descriptions.substituteBusCompressor = { type = "boolean", txt = "Export Bus Compressor devices as Melda MCompressor" }
+end
 
 if (os.platform() == 'MACINTOSH') then
   ToolConfig.defaults.exportAU = true
