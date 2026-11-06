@@ -1,6 +1,6 @@
 # Daw Project Export Tool for Renoise 3.5+ (early state)
 
-An early state daw project export tool (and later import maybe) for the Renoise DAW, starting from version 3.5 and upwards.
+A daw project export tool (and later import maybe) for the Renoise DAW, starting from version 3.5 and upwards.
 
 Please also read my suggestions for the Renoise API below, the tool requires binary helper tools so far which provide required information that currently is not avaialble thru the Renoise API.
 
@@ -42,6 +42,13 @@ The master track always gets a limiter as last device, with a threshold of -0.2 
 - No idea why VST3 preset loading fails in Cubase 14+. Might be the preset data itself. As a workaround, load the exported dawproject into S1 and then again export as dawproject. Bitwig exports also fail to load in Cubase. S1 uses an uncompressed zip type.
 - VST2 preset loading and mapping is buggy in Studio One currently and needs to be fixed.
 - Studio One will incorrectly set/interpret the parameter ids for AudioUnits. Therefore automation for AudioUnits currently is lost in Studio One.
+
+## Support my work
+
+Developing this tool took a lot of time and effort. If you'd like to support its ongoing development, you can buy me a coffee or donate here:
+https://www.paypal.com/donate/?cmd=_s-xclick&hosted_button_id=UMTW5AHN53MCG
+
+Thanks!
 
 ## How to use / install
 
@@ -150,14 +157,14 @@ A DAW can't load Renoise devices. After the health check you can choose which of
 
 If a plugin is not installed, it is displayed as not installed with a download button. An option without any installed plugin is disabled. If several plugins are installed for an option, you can select one in the dialog, by default in the order listed below. All the choices are saved.
 
-| Renoise | macOS, Windows | Linux | Default |
-| --- | --- | --- | --- |
-| Track pre gain, panning and delay | MUtility | - | on |
-| Gainer | MUtility | - | on |
-| EQ 5 | UVI Shade, ZL Equalizer 2, MEqualizer | ZL Equalizer 2 | on |
-| EQ 10 | UVI Shade, ZL Equalizer 2 | ZL Equalizer 2 | on |
-| Compressor | ZL Compressor, MCompressor | ZL Compressor | off |
-| Bus Compressor | ZL Compressor, MCompressor | ZL Compressor | off |
+| Renoise                           | macOS, Windows                        | Linux          | Default |
+| --------------------------------- | ------------------------------------- | -------------- | ------- |
+| Track pre gain, panning and delay | MUtility                              | -              | on      |
+| Gainer                            | MUtility                              | -              | on      |
+| EQ 5                              | UVI Shade, ZL Equalizer 2, MEqualizer | ZL Equalizer 2 | on      |
+| EQ 10                             | UVI Shade, ZL Equalizer 2             | ZL Equalizer 2 | on      |
+| Compressor                        | ZL Compressor, MCompressor            | ZL Compressor  | off     |
+| Bus Compressor                    | ZL Compressor, MCompressor            | ZL Compressor  | off     |
 
 All of them are VST3 plugins, available from [MeldaProduction](https://www.meldaproduction.com/downloads), [UVI](https://www.uvi.net/shade) and [ZL Audio](https://zl-audio.github.io/plugins). The table above is defined in `export/SubstitutionTable.lua`.
 
