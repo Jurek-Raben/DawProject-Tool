@@ -7,6 +7,13 @@
 -- Info here: https://creativecommons.org/licenses/by-nc-sa/4.0/
 -------------------------------------------------------------------------------
 
+local MASTER_LIMITER_THRESHOLD_DB = -0.2
+local MASTER_LIMITER_RELEASE_SECONDS = 0.06
+local MASTER_LIMITER_MIN_DB = -60
+local MASTER_LIMITER_MAX_DB = 0
+local MASTER_LIMITER_MIN_RELEASE_SECONDS = 0
+local MASTER_LIMITER_MAX_RELEASE_SECONDS = 1
+
 class "DeviceExporter"
 
 function DeviceExporter:__init(config, progress, layout, pluginInfoCache, automatedParameters, substitutions)
@@ -60,7 +67,61 @@ function DeviceExporter:generateDevicesForXML(track)
     end
   end
 
+  if (track.type == renoise.Track.TRACK_TYPE_MASTER) then
+    self:addMasterLimiterObj(devicesObj, trackIndex)
+  end
+
   return devicesObj
+end
+
+-- A generic device of the format, the DAW chooses its own limiter for it
+function DeviceExporter:addMasterLimiterObj(devicesObj, trackIndex)
+  local limiterId = 'limiter' .. trackIndex
+
+  local createDecibelsObj = function(name, value)
+    return {
+      _attr = {
+        id = limiterId .. '-' .. name,
+        name = name,
+        unit = 'decibel',
+        min = MASTER_LIMITER_MIN_DB,
+        max = MASTER_LIMITER_MAX_DB,
+        value = value
+      }
+    }
+  end
+
+  devicesObj[#devicesObj + 1] = {
+    Limiter = {
+      _attr = {
+        id = limiterId,
+        deviceRole = 'audioFX',
+        deviceName = 'Limiter',
+        name = 'Limiter',
+        loaded = "true"
+      },
+      Enabled = {
+        _attr = {
+          id = limiterId .. '-enabled',
+          name = 'On/Off',
+          value = 'true'
+        }
+      },
+      InputGain = createDecibelsObj('InputGain', 0),
+      OutputGain = createDecibelsObj('OutputGain', 0),
+      Threshold = createDecibelsObj('Threshold', MASTER_LIMITER_THRESHOLD_DB),
+      Release = {
+        _attr = {
+          id = limiterId .. '-release',
+          name = 'Release',
+          unit = 'seconds',
+          min = MASTER_LIMITER_MIN_RELEASE_SECONDS,
+          max = MASTER_LIMITER_MAX_RELEASE_SECONDS,
+          value = MASTER_LIMITER_RELEASE_SECONDS
+        }
+      },
+    }
+  }
 end
 
 -- Bitwig caches the files of a project by their name. It would load the presets of a previous

@@ -25,6 +25,8 @@ Please also read my suggestions for the Renoise API below, the tool requires bin
 - Progress dialog with cancel button, a list of all warnings and errors, and an expandable log
 - Health check before the export, with instructions for fixing problems on your operating system
 
+The master track always gets a limiter as last device, with a threshold of -0.2 dB and a release of 60 ms. It is a generic device of the format, so the DAW chooses its own limiter.
+
 #### Workarounds thru helper tools
 
 - VST2 preset export (included VST2 helper tool provides missing plugin id)
