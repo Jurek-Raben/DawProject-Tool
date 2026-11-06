@@ -9,6 +9,8 @@ Please also read my suggestions for the Renoise API below, the tool requires bin
 - Auto converts Renoise sample instruments into Redux instances, to make it loadable in the target DAW
 - Note data and song structure
 - Tracks with multiple instruments are exported as group with one track per instrument, the mixer settings and effects stay on the group
+- Hidden note columns are ignored, just like Renoise does not play them
+- The transpose settings of plugin instruments are applied to the notes
 - Plugin automation data
 - Section naming
 - Track coloring and naming
@@ -17,8 +19,10 @@ Please also read my suggestions for the Renoise API below, the tool requires bin
 - AudioUnit preset and automation export (not working in S1, due to bugs in S1)
 - VST2 preset and automation export (not working in S1, due to bugs in S1)
 - VST3 preset and automation export
+- VST2 shell plugins, e.g. WaveShell
 - MIDI pattern automation, pitchbend, CC, aftertouch and program change
 - Polyphonic aftertouch
+- Progress dialog with cancel button, a list of all warnings and errors, and an expandable log
 
 #### Workarounds thru helper tools
 
@@ -39,13 +43,89 @@ Please also read my suggestions for the Renoise API below, the tool requires bin
 
 ## How to use / install
 
-This tool has been tested on macOS only so far. It currently requires the included binary tools to be executable. Most certainly you will have to disable SIP (system integrity protection) under macOS, since the binaries are not approved by the all-controlling Apple Corp.
+Download the `.xrnx` file from the [releases](https://github.com/Jurek-Raben/DawProject-Tool/releases) and drag it into Renoise. The export then is available under `File > Export Song to .dawproject...`.
 
-The VST3 helper tool is known to not fully work on Windows. You will have to try yourself on Windows and Linux, but the tools are also included for these OSes.
+This tool has been tested on macOS only so far. The helper tools are also included for Windows and Linux, but you will have to try these yourself. Please report back.
 
-On Linux the `zip` command has to be installed for packing the .dawproject file.
+A single step of the export, e.g. reading a plugin that takes long to load, might exceed the maximum execution time. In this case just click on "continue", multiple times if required.
 
-Some exports of presets might take a long time, so long that the maximum execution time is exceeded. In this case just click on "continue", multiple times if required.
+### Getting the helper tools to run
+
+The export starts the helper tools from the `bin` directory of the installed tool, so they have to be executable. If they can't be started, the warnings and errors of the export dialog will show `error: Tool output not found`, usually together with the message of the operating system.
+
+The steps below have to be repeated after installing a new version of the tool, because this replaces the directory. Replace `V3.5.4` with your version of Renoise.
+
+If you don't want to use the helper tools at all, disable `useVST2InfoTool` and `useVST3InfoTool` in the options of the tool. You will lose VST2 presets and VST2 automation, and VST3 automation will only work for plugins using the index as parameter id.
+
+#### macOS
+
+The binaries are not signed, so macOS might block them. Disabling SIP (system integrity protection) should not be required for this.
+
+```bash
+cd ~/Library/Preferences/Renoise/V3.5.4/Scripts/Tools/ffx.tools.DawProject.xrnx/bin
+chmod +x vst2info-tool-* vst3info-tool-*
+xattr -dr com.apple.quarantine .
+```
+
+If macOS still blocks a binary on Apple Silicon, sign it locally:
+
+```bash
+codesign --force --sign - vst2info-tool-mac-arm vst3info-tool-mac-arm
+```
+
+Plugins running bridged in Renoise on Apple Silicon are read by the Intel binaries, which require Rosetta:
+
+```bash
+softwareupdate --install-rosetta
+```
+
+Plugins running bridged on an Intel Mac can't be read.
+
+#### Windows
+
+Only x86_64 is supported. Bridged plugins can't be read. In PowerShell, remove the download marker of the binaries:
+
+```powershell
+Get-ChildItem "$env:APPDATA\Renoise\V3.5.4\Scripts\Tools\ffx.tools.DawProject.xrnx\bin\*.exe" | Unblock-File
+```
+
+If your virus scanner removes or blocks the binaries, add an exception for the `bin` directory.
+
+#### Linux
+
+Only x86_64 is supported. Bridged plugins can't be read. The `zip` command is required for packing the .dawproject file.
+
+```bash
+cd ~/.renoise/V3.5.4/Scripts/Tools/ffx.tools.DawProject.xrnx/bin
+chmod +x vst2info-tool-* vst3info-tool-*
+```
+
+Some plugins need additional system libraries for being loaded. These have to be installed through your package manager.
+
+#### Testing a helper tool
+
+You can start a helper tool manually with the path of a plugin, e.g. on macOS:
+
+```bash
+./vst3info-tool-mac-arm "/Library/Audio/Plug-Ins/VST3/MyPlugin.vst3"
+```
+
+If it works, the output contains the plugin infos as JSON between `@@VSTINFO_BEGIN@@` and `@@VSTINFO_END@@`. Otherwise you will see the actual error message.
+
+## Reporting problems
+
+If an export fails or sounds wrong, please report it in the [Renoise forum](https://forum.renoise.com/). The most helpful thing is the complete list of warnings and errors:
+
+1. Keep the export dialog open after the export, it does not close by itself.
+2. Select the whole text in the "Warnings and errors" field with the cursor and copy it. Please copy all of it, not only the last lines or a screenshot, since the cause often is mentioned further up.
+3. If the export was aborted, or if there are no warnings at all, also click on "Show log" and copy the whole log the same way.
+4. Paste everything into your post, and also mention:
+   - your operating system and whether it is Intel or ARM
+   - the versions of Renoise and this tool
+   - the DAW you imported the .dawproject into, and its version
+   - what you expected and what actually happened, e.g. which track and plugin is affected
+
+If possible, also attach the song, or a small song that shows the same problem.
 
 ## Song requirements
 
@@ -83,21 +163,21 @@ Bitwig loads all the exports just fine, just like it should be. Studio One 7.2+ 
 
 #### Helper tools
 
-The tool can use VST2/3 info tools to extract the missing plugin infos, which I coded in Rust. The release packages include pre-built binaries in the `/bin` sub directory, for macOS (arm/intel), windows x86_64 and linux x86_64. Most likely you will need to disable SIP under macOS to make these tools startable, because these are not Apple aprroved in any way.
+The tool can use VST2/3 info tools to extract the missing plugin infos, which I coded in Rust. The release packages include pre-built binaries in the `/bin` sub directory, for macOS (arm/intel), windows x86_64 and linux x86_64. See [Getting the helper tools to run](#getting-the-helper-tools-to-run).
 
 #### Manual workarounds
 
-- You can manipulate the generated dawproject data inside the "tmp" directory of the tool directory and then use the "Repack .dawproject" menu entry.
+- You can manipulate the generated dawproject data inside the "tmp" directory of the tool directory and then use the "Repack .dawproject" menu entry. It is only available with `devMode` enabled in the options of the tool.
 
 #### How to build from source
 
-macOS and Linux users use the `./build_for_mac_linux.sh` script. Might need a chmod +x first. Windows users can test the same script, which should work in Windows 11 at least.
+The binaries are not part of the repository, so build these first with `./build_vst_tools.sh`. They end up in the `bin` directory of the tool. The scripts might need a chmod +x first.
 
-You can also decide to build the binary vst-tools by yourself.
+These tools try to circumvent the current limitations of the Renoise API. The VST2/VST3 tool will give detailed infos for a given plugin path.
 
-These tools try to circumvent the current limitations of the Renoise API. The VST2/VST3 tool will give detailed infos for a given plugin path. If you want to use those via the tool settings, you will have to build these as first step with `./build_vst_tools.sh`.
+The tools require Rust / cargo to be installed on the system. The VST3 tool also requires the VST3 SDK under `vst3info-tool/vst3sdk`, see `.github/workflows/build.yml` for the used version. On macOS the script builds for all platforms, which also requires `cross` and Docker. On Windows and Linux it only builds for the current system.
 
-The tools require Rust / cargo to be installed on the system. The VST3 tool also requires the VST3 SDK under `vst3info-tool/vst3sdk`, see `.github/workflows/build.yml` for the used version.
+For packing the tool itself, create a `build` directory and use `./build_for_mac_linux.sh`. Windows users can test the same script, which should work in Windows 11 at least. In contrast to the release builds, this package still contains the development-only code.
 
 #### Releases
 
