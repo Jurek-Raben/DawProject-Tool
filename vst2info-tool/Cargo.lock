@@ -25,11 +25,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "vst-tool-common"
+version = "0.1.0"
+dependencies = [
+ "json",
+ "libloading",
+]
+
+[[package]]
 name = "vst2info-tool"
 version = "0.1.0"
 dependencies = [
  "json",
  "libloading",
+ "vst-tool-common",
 ]
 
 [[package]]

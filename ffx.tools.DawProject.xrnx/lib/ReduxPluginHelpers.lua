@@ -7,6 +7,8 @@
 -------------------------------------------------------------------------------
 
 
+ReduxVST3Identifier = '5653545252445872656E6F6973652072'
+
 ReduxPluginHelpers = {}
 
 function ReduxPluginHelpers:isReduxVST3Available()

@@ -10,6 +10,13 @@
 
 SongHelpers = {}
 
+local TICKS_PER_LINE = 256
+
+-- A line has 256 ticks, and Renoise has lines per beat instead of a fixed resolution
+function SongHelpers:getBeatsPerTick()
+  return 1 / TICKS_PER_LINE / Song.transport.lpb
+end
+
 function SongHelpers:getTrackIndex(track)
   local numTracks = #Song.tracks
   for index = 1, numTracks do

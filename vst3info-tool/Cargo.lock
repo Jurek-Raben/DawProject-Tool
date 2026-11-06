@@ -63,6 +63,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "vst-tool-common"
+version = "0.1.0"
+dependencies = [
+ "json",
+ "libloading",
+]
+
+[[package]]
 name = "vst3"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -88,6 +96,7 @@ dependencies = [
  "json",
  "libc",
  "libloading",
+ "vst-tool-common",
  "vst3",
  "winapi",
 ]

@@ -23,6 +23,7 @@ Please also read my suggestions for the Renoise API below, the tool requires bin
 - MIDI pattern automation, pitchbend, CC, aftertouch and program change
 - Polyphonic aftertouch
 - Progress dialog with cancel button, a list of all warnings and errors, and an expandable log
+- Health check before the export, with instructions for fixing problems on your operating system
 
 #### Workarounds thru helper tools
 
@@ -51,7 +52,9 @@ A single step of the export, e.g. reading a plugin that takes long to load, migh
 
 ### Getting the helper tools to run
 
-The export starts the helper tools from the `bin` directory of the installed tool, so they have to be executable. If they can't be started, the warnings and errors of the export dialog will show `error: Tool output not found`, usually together with the message of the operating system.
+The export starts the helper tools from the `bin` directory of the installed tool, so they have to be executable.
+
+Before every export a health check runs. It checks the temporary directory, the packing command, the plugin database of Renoise, whether the helper tools can start, and whether they can access the plugins of the song. If everything is fine, the export continues right away. Otherwise the dialog shows the fitting instructions for your operating system, and you can check again after fixing the problem.
 
 The steps below have to be repeated after installing a new version of the tool, because this replaces the directory. Replace `V3.5.4` with your version of Renoise.
 
@@ -104,13 +107,13 @@ Some plugins need additional system libraries for being loaded. These have to be
 
 #### Testing a helper tool
 
-You can start a helper tool manually with the path of a plugin, e.g. on macOS:
+You can also run the health check of a helper tool manually, optionally with the paths of plugins. It only checks if it can access these files, and does not load the plugins. E.g. on macOS:
 
 ```bash
-./vst3info-tool-mac-arm "/Library/Audio/Plug-Ins/VST3/MyPlugin.vst3"
+./vst3info-tool-mac-arm --healthcheck "/Library/Audio/Plug-Ins/VST3/MyPlugin.vst3"
 ```
 
-If it works, the output contains the plugin infos as JSON between `@@VSTINFO_BEGIN@@` and `@@VSTINFO_END@@`. Otherwise you will see the actual error message.
+To really load a plugin, leave out `--healthcheck`. If it works, the output contains the infos as JSON between `@@VSTINFO_BEGIN@@` and `@@VSTINFO_END@@`. Otherwise you will see the actual error message.
 
 ## Reporting problems
 
@@ -173,11 +176,18 @@ The tool can use VST2/3 info tools to extract the missing plugin infos, which I 
 
 The binaries are not part of the repository, so build these first with `./build_vst_tools.sh`. They end up in the `bin` directory of the tool. The scripts might need a chmod +x first.
 
-These tools try to circumvent the current limitations of the Renoise API. The VST2/VST3 tool will give detailed infos for a given plugin path.
+These tools try to circumvent the current limitations of the Renoise API. The VST2/VST3 tool will give detailed infos for a given plugin path. The code they share, like the command line, the output and the health check, is located in `vst-tool-common`.
 
 The tools require Rust / cargo to be installed on the system. The VST3 tool also requires the VST3 SDK under `vst3info-tool/vst3sdk`, see `.github/workflows/build.yml` for the used version. On macOS the script builds for all platforms, which also requires `cross` and Docker. On Windows and Linux it only builds for the current system.
 
 For packing the tool itself, create a `build` directory and use `./build_for_mac_linux.sh`. Windows users can test the same script, which should work in Windows 11 at least. In contrast to the release builds, this package still contains the development-only code.
+
+#### Source code structure
+
+- `main.lua` - The entry point: menus, options and the listeners of Renoise
+- `lib/` - Everything independent of the direction, like the temporary files, background tasks, dialogs and helpers
+- `export/` - The export, one class per topic. `DawProjectExporter` is the sequence, `TrackLayout` knows how tracks are split by instrument, and the others generate the tracks, devices, automation and arrangement
+- `import/` - The future import, not available in the menu yet
 
 #### Releases
 

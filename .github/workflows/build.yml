@@ -104,6 +104,20 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "file=${id}_v${version}.xrnx" >> "$GITHUB_OUTPUT"
 
+      - name: Insert version into main.lua
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          if ! echo "$VERSION" | grep -qE '^[0-9]+(\.[0-9]+)*$'; then
+            echo "Invalid version in manifest.xml: '$VERSION'" >&2
+            exit 1
+          fi
+          sed -i "s/^-- v@build:version@.*$/-- v$VERSION/" "$TOOL_DIR/main.lua"
+          if grep -q '@build:version@' "$TOOL_DIR/main.lua" || ! grep -qxF -- "-- v$VERSION" "$TOOL_DIR/main.lua"; then
+            echo "Version placeholder in main.lua was not replaced" >&2
+            exit 1
+          fi
+
       - name: Remove binaries of the checkout
         run: rm -rf "$TOOL_DIR/bin"
 

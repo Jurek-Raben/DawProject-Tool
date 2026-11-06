@@ -9,11 +9,10 @@ repository = "https://github.com/Jurek-Raben/DawProject-Tool"
 json = "0.12.4"
 vst3 = "0.1.2"
 libloading = "0.8.8"
+vst-tool-common = { path = "../vst-tool-common" }
+
+[target.'cfg(unix)'.dependencies]
 libc = "0.2.175"
-
-# Platform-specific dependencies
-[target.'cfg(target_os = "macos")'.dependencies]
-
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = [
