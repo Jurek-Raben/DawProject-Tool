@@ -1,5 +1,5 @@
 -------------------------------------------------------------------------------
--- Shade Substitution, replaces the Renoise EQ 5 with the UVI Shade VST3 plugin.
+-- Shade Substitution, replaces the Renoise EQ 5 and EQ 10 with the UVI Shade VST3 plugin.
 -- The state of Shade is JSON inside of a VST2 style chunk. Its parameters are
 -- assigned by the preset, so the ids of the bands below only are valid for the
 -- slots written by this file.
@@ -33,14 +33,28 @@ local FILTER_SLOT_FIELDS = {
 }
 local SHELF_SLOT_FIELD_COUNT = 13
 
--- The parameter ids of the fields a band can automate
-local BANDS = {
-  { filterType = 'Low Shelf/Eq-ing', firstSlot = 139, frequencyId = 48758, gainId = 48780, slopeId = 48781 },
+-- The slots of the filters with the parameter ids of the fields a band can automate
+local LOW_SHELF_SLOTS = { filterType = 'Low Shelf/Eq-ing', firstSlot = 139, frequencyId = 48758, gainId = 48780, slopeId = 48781 }
+local HIGH_SHELF_SLOTS = { filterType = 'High Shelf/Eq-ing', firstSlot = 152, frequencyId = 48813, gainId = 48814, slopeId = 48815 }
+local PEAK_SLOTS = {
   { filterType = 'Peak/Eq-ing', firstSlot = 55, frequencyId = 1727, gainId = 1728, qId = 1730 },
   { filterType = 'Peak/Eq-ing', firstSlot = 83, frequencyId = 1818, gainId = 1819, qId = 1821 },
   { filterType = 'Peak/Eq-ing', firstSlot = 97, frequencyId = 48632, gainId = 48633, qId = 48656 },
-  { filterType = 'High Shelf/Eq-ing', firstSlot = 152, frequencyId = 48813, gainId = 48814, slopeId = 48815 },
+  { filterType = 'Peak/Eq-ing', firstSlot = 12, frequencyId = 1600, gainId = 1601, qId = 1603 },
+  { filterType = 'Peak/Eq-ing', firstSlot = 26, frequencyId = 1635, gainId = 1636, qId = 1638 },
+  { filterType = 'Peak/Eq-ing', firstSlot = 40, frequencyId = 1691, gainId = 1692, qId = 1694 },
+  { filterType = 'Peak/Eq-ing', firstSlot = 111, frequencyId = 48688, gainId = 48689, qId = 48691 },
+  { filterType = 'Peak/Eq-ing', firstSlot = 125, frequencyId = 48723, gainId = 48724, qId = 48726 },
 }
+
+local function createBandSlots(numBands)
+  local bands = { LOW_SHELF_SLOTS }
+  for peakIndex = 1, numBands - 2 do
+    table.insert(bands, PEAK_SLOTS[peakIndex])
+  end
+  table.insert(bands, HIGH_SHELF_SLOTS)
+  return bands
+end
 
 -- Peak filters don't use their slope
 local PEAK_SLOPE = 6
@@ -49,15 +63,19 @@ local MIN_FREQUENCY = 10
 local MAX_FREQUENCY = 30000
 local GAIN_RANGE_DB = 30
 
--- The shelves of the EQ 5 use a range from 0 to 1, where 1 is a slope of 12 dB per octave.
+-- The shelves of the Renoise EQs use a range from 0 to 1, where 1 is a slope of 12 dB per octave.
 -- Linear down to the lowest slope of Shade is an assumption.
 local MIN_SHELF_SLOPE = 2
 local MAX_SHELF_SLOPE = 12
+local MAX_SLOPE = 40
+local MIN_Q = 0.02
+local MAX_Q = 22.4
 
--- The slope in dB per octave at the normalized positions 0, 0.025, 0.05 ... 0.625
+-- The slope in dB per octave at the normalized positions 0, 0.025, 0.05 ... 0.875
 local SLOPE_BY_NORMALIZED_POSITION = {
   2, 2.23, 2.47, 2.71, 2.96, 3.22, 3.48, 3.75, 4.04, 4.33, 4.64, 4.96, 5.3, 5.65, 6.02, 6.42,
-  6.84, 7.29, 7.78, 8.3, 8.87, 9.48, 10.2, 10.9, 11.7, 12.7,
+  6.84, 7.29, 7.78, 8.3, 8.87, 9.48, 10.2, 10.9, 11.7, 12.7, 13.7, 14.9, 16.3, 17.9, 19.8,
+  22.1, 25, 28.7, 33.5, 40.3,
 }
 local NORMALIZED_POSITIONS_PER_SLOPE_STEP = 0.025
 
@@ -98,13 +116,13 @@ local function createAutomationEntry(slot, slotTarget)
   return '{"Index":' .. slot .. ',"Target":"' .. slotTarget .. '"}'
 end
 
-local function createAutomationsJson()
+local function createAutomationsJson(bands)
   local entries = {}
   for index, slotTarget in ipairs(GENERAL_SLOTS) do
     table.insert(entries, createAutomationEntry(index - 1, slotTarget))
   end
 
-  for band, bandSlots in ipairs(BANDS) do
+  for band, bandSlots in ipairs(bands) do
     local fieldCount = bandSlots.qId and #FILTER_SLOT_FIELDS or SHELF_SLOT_FIELD_COUNT
     for fieldIndex = 1, fieldCount do
       table.insert(entries, createAutomationEntry(bandSlots.firstSlot + fieldIndex - 1,
@@ -144,29 +162,39 @@ class "ShadeSubstitution"
 ShadeSubstitution.classId = SHADE_CLASS_ID
 ShadeSubstitution.pluginName = 'Shade'
 
-function ShadeSubstitution:__init(device)
-  self.eq5 = Eq5Parameters(device)
+function ShadeSubstitution:__init(device, config, layout)
+  self.eq = EqParameters(device, config, layout)
+  self.bands = createBandSlots(layout.numBands)
 end
 
 function ShadeSubstitution:isUsable()
-  return self.eq5:isUsable()
+  return self.eq:isUsable()
+end
+
+-- The offset of the dialog also changes the steepness of the shelves
+function ShadeSubstitution:getShelfSlope(bandwidth)
+  return math.max(MIN_SHELF_SLOPE, math.min(self.eq:applyQFactor(shelfBandwidthToSlope(bandwidth)), MAX_SLOPE))
+end
+
+function ShadeSubstitution:getPeakQ(bandwidth)
+  return math.max(MIN_Q, math.min(self.eq:applyQFactor(MeldaScales:peakBandwidthToQ(bandwidth)), MAX_Q))
 end
 
 function ShadeSubstitution:createFilterJson(band)
   local format = function(number) return MeldaPreset:formatNumber(number) end
-  local bandwidth = self.eq5:getValue('bandwidth', band)
+  local bandwidth = self.eq:getValue('bandwidth', band)
   local shapeFields
 
-  if (self.eq5:isShelf(band)) then
-    shapeFields = '"Slope":' .. format(shelfBandwidthToSlope(bandwidth))
+  if (self.eq:isShelf(band)) then
+    shapeFields = '"Slope":' .. format(self:getShelfSlope(bandwidth))
   else
-    shapeFields = '"Q-Width":' .. format(MeldaScales:peakBandwidthToQ(bandwidth)) .. ',"Slope":' .. format(PEAK_SLOPE)
+    shapeFields = '"Q-Width":' .. format(self:getPeakQ(bandwidth)) .. ',"Slope":' .. format(PEAK_SLOPE)
   end
 
   return table.concat({
-    '["', BANDS[band].filterType, '",{"C":true,"Colour Id":', band - 1, ',"Enabled":true',
-    ',"Frequency":', format(self.eq5:getValue('frequency', band)),
-    ',"Gain":', format(self.eq5:getValue('gain', band)),
+    '["', self.bands[band].filterType, '",{"C":true,"Colour Id":', band - 1, ',"Enabled":true',
+    ',"Frequency":', format(self.eq:getValue('frequency', band)),
+    ',"Gain":', format(self.eq:getValue('gain', band)),
     ',"L":true,"LFE":true,"Lsr":true,"Lss":true,"MidSide":false,"R":true,"Rsr":true,"Rss":true,',
     shapeFields, '}]',
   })
@@ -174,12 +202,12 @@ end
 
 function ShadeSubstitution:createPresetData()
   local filters = {}
-  for band = 1, EQ5_NUM_BANDS do
+  for band = 1, self.eq.numBands do
     filters[band] = self:createFilterJson(band)
   end
 
   return createPresetFile(table.concat({
-    '{"Automations":[', createAutomationsJson(), '],"Connections":[],',
+    '{"Automations":[', createAutomationsJson(self.bands), '],"Connections":[],',
     '"Editor Height":', EDITOR_HEIGHT, ',"Editor Width":', EDITOR_WIDTH, ',"Filters":[', table.concat(filters, ','),
     '],"Gain In":0.0,"Gain Out":0.0,"Limiter":{"Enabled":false,"Threshold":0.0},"Mix":1.0,"Modulators":[],',
     '"Modulators Visible":true,"Piano Keyboard Visible":true,',
@@ -189,28 +217,28 @@ function ShadeSubstitution:createPresetData()
 end
 
 function ShadeSubstitution:mapAutomationValue(parameter, parameterNum, automationValue)
-  local target = self.eq5:findTarget(parameterNum)
+  local target = self.eq:findTarget(parameterNum)
   if (target == nil) then
     return {}
   end
 
-  local bandSlots = BANDS[target.band]
-  local value = self.eq5:getAutomatedValue(parameter, target, automationValue)
+  local bandSlots = self.bands[target.band]
+  local value = self.eq:getAutomatedValue(parameter, target, automationValue)
 
   if (target.type == 'frequency') then
     return { { paramIndex = bandSlots.frequencyId, name = 'Frequency ' .. target.band, value = normalizeFrequency(value) } }
   elseif (target.type == 'gain') then
     return { { paramIndex = bandSlots.gainId, name = 'Gain ' .. target.band, value = normalizeGain(value) } }
-  elseif (self.eq5:isShelf(target.band)) then
+  elseif (self.eq:isShelf(target.band)) then
     return { {
       paramIndex = bandSlots.slopeId,
       name = 'Slope ' .. target.band,
-      value = normalizeSlope(shelfBandwidthToSlope(value)),
+      value = normalizeSlope(self:getShelfSlope(value)),
     } }
   end
   return { {
     paramIndex = bandSlots.qId,
     name = 'Q ' .. target.band,
-    value = normalizeQ(MeldaScales:peakBandwidthToQ(value)),
+    value = normalizeQ(self:getPeakQ(value)),
   } }
 end

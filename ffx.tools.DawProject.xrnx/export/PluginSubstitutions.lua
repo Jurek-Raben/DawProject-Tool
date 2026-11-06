@@ -54,7 +54,59 @@ function PluginSubstitutions:findSelectedTarget(option, config)
   return installedTargets[1]
 end
 
+function PluginSubstitutions:countDeviceInSong(devicePath)
+  local count = 0
+  for _, track in ipairs(Song.tracks) do
+    for _, device in ipairs(track.devices) do
+      if (device.device_path == devicePath) then
+        count = count + 1
+      end
+    end
+  end
+  return count
+end
+
+-- Every track has a mixer, so only the ones with pre mixer settings count
+function PluginSubstitutions:countPreMixersInSong()
+  local count = 0
+  for _, track in ipairs(Song.tracks) do
+    -- the delay also counts, since the dialog offers to export it with the plugin
+    if (MUtilityPreMixerSubstitution(track, { [TRACK_DELAY_TARGET_CONFIG_KEY] = TRACK_DELAY_IN_PLUGIN }):isUsed()) then
+      count = count + 1
+    end
+  end
+  return count
+end
+
+function PluginSubstitutions:isTrackDelayUsedInSong()
+  for _, track in ipairs(Song.tracks) do
+    if (track.output_delay ~= 0) then
+      return true
+    end
+  end
+  return false
+end
+
+-- Returns the options of this operating system for the parts of Renoise the current song uses,
+-- each with the number of its occurrences
+function PluginSubstitutions:findOptionsUsedInSong()
+  local options = {}
+  for _, option in ipairs(SubstitutionTable:getOptionsOfCurrentSystem()) do
+    if (option.devicePath ~= nil) then
+      option.usageCount = self:countDeviceInSong(option.devicePath)
+    else
+      option.usageCount = self:countPreMixersInSong()
+    end
+
+    if (option.usageCount > 0) then
+      table.insert(options, option)
+    end
+  end
+  return options
+end
+
 function PluginSubstitutions:__init(config)
+  self.config = config
   self.substitutionsByKey = {}
   self.targetsByDevicePath = {}
   self.preMixerTarget = nil
@@ -85,9 +137,17 @@ function PluginSubstitutions:findPreMixerSubstitution(trackNum)
   end
 
   return self:getCached('premixer-' .. trackNum, function()
-    local substitution = self.preMixerTarget.create(Song:track(trackNum))
+    local substitution = self.preMixerTarget.create(Song:track(trackNum), self.config)
     return substitution:isUsed() and substitution or nil
   end)
+end
+
+-- Without a substituted pre mixer, the option for the clips of the tool decides
+function PluginSubstitutions:shouldShiftClipsByTrackDelay()
+  if (self.preMixerTarget == nil) then
+    return self.config['addTrackDelayToClips'] == true
+  end
+  return self.config[TRACK_DELAY_TARGET_CONFIG_KEY] ~= TRACK_DELAY_IN_PLUGIN
 end
 
 -- Returns nil for all devices that are not substituted
@@ -98,7 +158,7 @@ function PluginSubstitutions:findDeviceSubstitution(device, trackNum, deviceInde
   end
 
   return self:getCached('device-' .. trackNum .. '-' .. deviceIndex, function()
-    local substitution = target.create(device)
+    local substitution = target.create(device, self.config)
     if (substitution:isUsable()) then
       return substitution
     end

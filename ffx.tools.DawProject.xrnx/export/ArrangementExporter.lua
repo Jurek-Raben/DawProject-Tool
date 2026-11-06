@@ -8,7 +8,8 @@
 
 class "ArrangementExporter"
 
-function ArrangementExporter:__init(config, progress, layout)
+function ArrangementExporter:__init(config, progress, layout, substitutions)
+  self.substitutions = substitutions
   self.config = config
   self.progress = progress
   self.layout = layout
@@ -68,6 +69,8 @@ function ArrangementExporter:generateNoteEventsDataForXML(songEvents, automation
 
   local lanesObj = {}
   local scaleFactor = SongHelpers:getBeatsPerTick()
+  -- how far the notes of a clip are moved, if the clip itself can't start before the song
+  local noteOffsetsOfClips = {}
 
   self.progress:setPhase('Exporting notes', 0.85, 0.93)
 
@@ -95,17 +98,17 @@ function ArrangementExporter:generateNoteEventsDataForXML(songEvents, automation
     local clips = lanesObj[laneKey].Clips.Clip
     if (clips[noteEvent.seqNum] == nil) then
       local trackDelay = 0
-      if (self.config['addTrackDelayToClips']) then
+      if (self.substitutions:shouldShiftClipsByTrackDelay()) then
         trackDelay = Song:track(noteEvent.trackNum).output_delay / (60000 / (Song.transport.bpm))
       end
       local clipTimestamp = noteEvent.patternTimestamp * scaleFactor + trackDelay
-      if (clipTimestamp < 0) then
-        clipTimestamp = 0
-      end
+      local noteOffset = math.min(clipTimestamp, 0)
+      noteOffsetsOfClips[laneKey .. '-' .. noteEvent.seqNum] = noteOffset
+      clipTimestamp = math.max(clipTimestamp, 0)
       clips[noteEvent.seqNum] = {
         _attr = {
           time = clipTimestamp,
-          duration = noteEvent.patternDuration * scaleFactor,
+          duration = noteEvent.patternDuration * scaleFactor + noteOffset,
           playStart = "0", -- -trackDelay,
           -- loopStart = "0.0",
           -- loopEnd = "8.0",
@@ -127,10 +130,15 @@ function ArrangementExporter:generateNoteEventsDataForXML(songEvents, automation
     end
 
     local notes = lanesObj[laneKey].Clips.Clip[noteEvent.seqNum].Lanes.Notes.Note
-    notes[#notes + 1] = {
+    local noteOffset = noteOffsetsOfClips[laneKey .. '-' .. noteEvent.seqNum]
+    local noteTime = noteEvent.patternRelTimestamp * scaleFactor + noteOffset
+    -- a note starting before the song keeps only the part that is audible in the song
+    local noteDuration = noteEvent.duration * scaleFactor + math.min(noteTime, 0)
+
+    local note = {
       _attr = {
-        time = Helpers:round(noteEvent.patternRelTimestamp * scaleFactor, 6),
-        duration = Helpers:round(noteEvent.duration * scaleFactor, 6),
+        time = Helpers:round(math.max(noteTime, 0), 6),
+        duration = Helpers:round(noteDuration, 6),
         channel = 0,
         key = self.layout:getTransposedNoteKey(noteEvent),
         vel = noteEvent.velocity,
@@ -150,6 +158,10 @@ function ArrangementExporter:generateNoteEventsDataForXML(songEvents, automation
       } or nil
 
     }
+
+    if (noteDuration > 0) then
+      notes[#notes + 1] = note
+    end
   end
 
   -- automation without notes, e.g. of the effects on the group of a split track

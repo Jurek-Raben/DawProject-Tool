@@ -9,7 +9,6 @@
 -------------------------------------------------------------------------------
 
 local GAIN_RANGE_DB = 24
-local PANORAMA_LAW_RANGE_DB = 12
 local MIN_FREQUENCY = 20
 local MAX_FREQUENCY = 20000
 
@@ -62,10 +61,6 @@ end
 
 function MeldaScales:normalizeGain(decibels)
   return clampToNormalized((decibels + GAIN_RANGE_DB) / (2 * GAIN_RANGE_DB))
-end
-
-function MeldaScales:normalizePanoramaLaw(decibels)
-  return clampToNormalized((decibels + PANORAMA_LAW_RANGE_DB) / (2 * PANORAMA_LAW_RANGE_DB))
 end
 
 function MeldaScales:normalizeFrequency(frequency)

@@ -138,11 +138,12 @@ A song has to fulfill the following requirements for a working export:
 
 ## Plugin substitutions
 
-A DAW can't load Renoise devices. After the health check you can choose which of them are exported as plugin instead. The presets are generated and the automation is converted. If a plugin is not installed, its option is disabled. You can get the plugins from the [MeldaProduction downloads](https://www.meldaproduction.com/downloads) and from [UVI](https://www.uvi.net/shade). These plugins are not offered for Linux, so there the dialog is skipped. The available substitutions per operating system are listed in `export/SubstitutionTable.lua`.
+A DAW can't load Renoise devices. After the health check you can choose which of them are exported as plugin instead. Only the devices that are used in the song are listed, without any of them the dialog is skipped. The presets are generated and the automation is converted. If a plugin is not installed, its option is disabled. You can get the plugins from the [MeldaProduction downloads](https://www.meldaproduction.com/downloads) and from [UVI](https://www.uvi.net/shade). On Linux only [ZL Equalizer 2](https://zl-audio.github.io/plugins) is offered. The available substitutions per operating system are listed in `export/SubstitutionTable.lua`.
 
-- Track pre gain and panning -> MUtility VST3, using the +3 dB pan law of Renoise. Only added to tracks with pre-mixer settings.
+- Track pre gain, panning and delay -> MUtility VST3, using the +3 dB pan law of Renoise. Only added to tracks using one of these. By default the track delay shifts the MIDI notes in the exported clips. In the dialog you can select a delay inside of MUtility instead, a negative one is reported as latency there.
 - Gainer devices -> MUtility VST3
-- EQ 5 devices -> UVI Shade VST3 or MEqualizer VST3. If both are installed you can select one in the dialog, by default Shade is used. The ear guard limiter of Shade is disabled. The conversion of the bandwidth is an approximation.
+- EQ 5 devices -> UVI Shade VST3, ZL Equalizer 2 VST3 or MEqualizer VST3. If several are installed you can select one in the dialog, by default in this order. On Linux ZL Equalizer 2 is available. The Q factor in the dialog makes the filters of the exported EQs narrower or wider.
+- EQ 10 devices -> UVI Shade VST3 or ZL Equalizer 2 VST3, on Linux ZL Equalizer 2. The ear guard limiter of Shade is disabled. The conversion of the bandwidth is an approximation.
 - Compressor and Bus Compressor devices -> MCompressor VST3, disabled by default
 
 The plugins are named like the devices in Renoise, with their position on the track, e.g. `EQ 5 pos 2`.

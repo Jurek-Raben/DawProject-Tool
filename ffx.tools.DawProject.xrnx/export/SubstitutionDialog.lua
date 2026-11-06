@@ -10,15 +10,23 @@
 
 local DIALOG_TITLE = 'DAW Project - Plugin Substitutions'
 
+local CHECKBOX_SIZE = 18
 local CHECKBOX_COLUMN_WIDTH = 24
-local DEVICE_COLUMN_WIDTH = 190
+local DEVICE_COLUMN_WIDTH = 180
+local COUNT_COLUMN_WIDTH = 50
 local PLUGIN_COLUMN_WIDTH = 200
 local STATUS_COLUMN_WIDTH = 90
 local ACTION_COLUMN_WIDTH = 80
-local TABLE_WIDTH = CHECKBOX_COLUMN_WIDTH + DEVICE_COLUMN_WIDTH + PLUGIN_COLUMN_WIDTH + STATUS_COLUMN_WIDTH +
-    ACTION_COLUMN_WIDTH
+local LEADING_COLUMNS_WIDTH = CHECKBOX_COLUMN_WIDTH + DEVICE_COLUMN_WIDTH + COUNT_COLUMN_WIDTH
+local TABLE_WIDTH = LEADING_COLUMNS_WIDTH + PLUGIN_COLUMN_WIDTH + STATUS_COLUMN_WIDTH + ACTION_COLUMN_WIDTH
 local CONTINUE_BUTTON_WIDTH = 120
 local CONTINUE_BUTTON_HEIGHT = 24
+local OPTION_MARGIN = 3
+
+local MAX_Q_FACTOR_OCTAVES = 2
+
+local TRACK_DELAY_NOTES_HINT = 'Notes are moved'
+local TRACK_DELAY_PLUGIN_HINT = 'Audio is delayed'
 
 local HEADER_COLOR = { 160, 190, 215 }
 local DEVICE_COLOR = { 225, 225, 225 }
@@ -29,6 +37,11 @@ local DISABLED_COLOR = { 125, 125, 125 }
 local CONTINUE_BUTTON_COLOR = { 60, 130, 80 }
 
 
+local function formatQFactor(octaves)
+  return string.format('x %.2f', 2 ^ octaves)
+end
+
+
 class "SubstitutionDialog"
 
 function SubstitutionDialog:__init()
@@ -36,7 +49,7 @@ function SubstitutionDialog:__init()
 end
 
 -- onOptionChanged gets the config key and the new value, onContinue starts the export
-function SubstitutionDialog:start(config, onOptionChanged, onContinue)
+function SubstitutionDialog:start(options, config, onOptionChanged, onContinue)
   self:close()
 
   local vb = renoise.ViewBuilder()
@@ -47,7 +60,7 @@ function SubstitutionDialog:start(config, onOptionChanged, onContinue)
     self:createHeaderRow(vb),
   }
 
-  for _, option in ipairs(SubstitutionTable:getOptionsOfCurrentSystem()) do
+  for _, option in ipairs(options) do
     tableView:add_child(self:createOptionView(vb, option, config, onOptionChanged))
   end
 
@@ -88,9 +101,12 @@ function SubstitutionDialog:createCell(vb, width, text, color, font)
 end
 
 function SubstitutionDialog:createHeaderRow(vb)
+  -- the same margin as the rows of the options, so the columns are aligned
   return vb:row {
+    margin = OPTION_MARGIN,
     vb:space { width = CHECKBOX_COLUMN_WIDTH },
     self:createCell(vb, DEVICE_COLUMN_WIDTH, 'Renoise', HEADER_COLOR, 'bold'),
+    self:createCell(vb, COUNT_COLUMN_WIDTH, 'Count', HEADER_COLOR, 'bold'),
     self:createCell(vb, PLUGIN_COLUMN_WIDTH, 'VST3 plugin', HEADER_COLOR, 'bold'),
     self:createCell(vb, STATUS_COLUMN_WIDTH, 'Status', HEADER_COLOR, 'bold'),
   }
@@ -101,20 +117,22 @@ function SubstitutionDialog:createOptionView(vb, option, config, onOptionChanged
   local isInstalled = #installedTargets > 0
 
   local firstRow = vb:row {
-    vb:row {
-      width = CHECKBOX_COLUMN_WIDTH,
-      vb:checkbox {
-        value = isInstalled and config[option.configKey] == true,
-        active = isInstalled,
-        notifier = function(isEnabled) onOptionChanged(option.configKey, isEnabled) end,
-      },
+    -- a row doesn't get wider than its content, so the column is filled up with a space
+    vb:checkbox {
+      width = CHECKBOX_SIZE,
+      height = CHECKBOX_SIZE,
+      value = isInstalled and config[option.configKey] == true,
+      active = isInstalled,
+      notifier = function(isEnabled) onOptionChanged(option.configKey, isEnabled) end,
     },
+    vb:space { width = CHECKBOX_COLUMN_WIDTH - CHECKBOX_SIZE },
     self:createCell(vb, DEVICE_COLUMN_WIDTH, option.title, isInstalled and DEVICE_COLOR or DISABLED_COLOR),
+    self:createCell(vb, COUNT_COLUMN_WIDTH, option.usageCount .. 'x', isInstalled and DEVICE_COLOR or DISABLED_COLOR),
   }
 
   local optionView = vb:column {
     style = 'plain',
-    margin = 3,
+    margin = OPTION_MARGIN,
     spacing = 2,
     firstRow,
   }
@@ -122,6 +140,15 @@ function SubstitutionDialog:createOptionView(vb, option, config, onOptionChanged
   if (isInstalled) then
     firstRow:add_child(self:createInstalledPluginCell(vb, option, installedTargets, config, onOptionChanged))
     firstRow:add_child(self:createCell(vb, STATUS_COLUMN_WIDTH, 'Installed', INSTALLED_COLOR))
+    -- the column of the download button is empty here, but all the rows have the same width
+    firstRow:add_child(vb:space { width = ACTION_COLUMN_WIDTH })
+    if (option.qFactorConfigKey ~= nil) then
+      optionView:add_child(self:createQFactorRow(vb, option, config, onOptionChanged))
+    end
+    if (option.hasTrackDelayTarget and PluginSubstitutions:isTrackDelayUsedInSong()) then
+      optionView:add_child(self:createTrackDelayRow(vb, config, onOptionChanged))
+    end
+    self:addAlternativeTargetRows(vb, optionView, option)
     return optionView
   end
 
@@ -158,16 +185,56 @@ function SubstitutionDialog:createInstalledPluginCell(vb, option, installedTarge
   }
 end
 
--- The first target is displayed in the row of the option, the others below it
-function SubstitutionDialog:addMissingTargetCells(vb, firstRow, optionView, target, targetIndex)
-  local targetRow = firstRow
-  local indentWidth = CHECKBOX_COLUMN_WIDTH + DEVICE_COLUMN_WIDTH
+-- The slider works in octaves, its value is displayed as the resulting factor of the Q
+function SubstitutionDialog:createQFactorRow(vb, option, config, onOptionChanged)
+  local octaves = config[option.qFactorConfigKey] or 0
+  local valueView = self:createCell(vb, STATUS_COLUMN_WIDTH, formatQFactor(octaves), PLUGIN_COLOR)
 
-  if (targetIndex > 1) then
-    targetRow = vb:row { vb:space { width = indentWidth } }
-    optionView:add_child(targetRow)
-  end
+  return vb:row {
+    vb:space { width = CHECKBOX_COLUMN_WIDTH },
+    self:createCell(vb, DEVICE_COLUMN_WIDTH + COUNT_COLUMN_WIDTH, 'Q factor', DEVICE_COLOR),
+    vb:slider {
+      width = PLUGIN_COLUMN_WIDTH,
+      min = -MAX_Q_FACTOR_OCTAVES,
+      max = MAX_Q_FACTOR_OCTAVES,
+      value = octaves,
+      default = 0,
+      tooltip = 'Makes the filters narrower or wider. Double click to reset.',
+      notifier = function(newOctaves)
+        valueView.text = formatQFactor(newOctaves)
+        onOptionChanged(option.qFactorConfigKey, newOctaves)
+      end,
+    },
+    valueView,
+    vb:space { width = ACTION_COLUMN_WIDTH },
+  }
+end
 
+function SubstitutionDialog:createTrackDelayRow(vb, config, onOptionChanged)
+  local isInPlugin = config[TRACK_DELAY_TARGET_CONFIG_KEY] == TRACK_DELAY_IN_PLUGIN
+  local hintView = self:createCell(vb, STATUS_COLUMN_WIDTH + ACTION_COLUMN_WIDTH,
+    isInPlugin and TRACK_DELAY_PLUGIN_HINT or TRACK_DELAY_NOTES_HINT, DISABLED_COLOR)
+
+  return vb:row {
+    vb:space { width = CHECKBOX_COLUMN_WIDTH },
+    self:createCell(vb, DEVICE_COLUMN_WIDTH + COUNT_COLUMN_WIDTH, 'Track delay', DEVICE_COLOR),
+    vb:popup {
+      width = PLUGIN_COLUMN_WIDTH,
+      items = { 'Shift MIDI notes', 'MUtility delay' },
+      value = isInPlugin and 2 or 1,
+      tooltip = 'Shift MIDI notes: The notes in the DAW are moved by the delay of the track.\n' ..
+          'MUtility delay: The notes stay in place, a plugin delays the audio of the track.',
+      notifier = function(index)
+        local isPluginSelected = index == 2
+        hintView.text = isPluginSelected and TRACK_DELAY_PLUGIN_HINT or TRACK_DELAY_NOTES_HINT
+        onOptionChanged(TRACK_DELAY_TARGET_CONFIG_KEY, isPluginSelected and TRACK_DELAY_IN_PLUGIN or TRACK_DELAY_IN_CLIPS)
+      end,
+    },
+    hintView,
+  }
+end
+
+function SubstitutionDialog:addMissingTargetInfo(vb, targetRow, target)
   targetRow:add_child(self:createCell(vb, PLUGIN_COLUMN_WIDTH, target.pluginName, DISABLED_COLOR))
   targetRow:add_child(self:createCell(vb, STATUS_COLUMN_WIDTH, 'Not installed', MISSING_COLOR))
   targetRow:add_child(vb:button {
@@ -176,6 +243,30 @@ function SubstitutionDialog:addMissingTargetCells(vb, firstRow, optionView, targ
     tooltip = target.downloadUrl,
     notifier = function() renoise.app():open_url(target.downloadUrl) end,
   })
+end
+
+-- Shows the plugins that could be used additionally, if they were installed
+function SubstitutionDialog:addAlternativeTargetRows(vb, optionView, option)
+  for _, target in ipairs(option.targets) do
+    if (not PluginSubstitutions:isPluginInstalled(target.classId)) then
+      local targetRow = vb:row { vb:space { width = LEADING_COLUMNS_WIDTH } }
+      self:addMissingTargetInfo(vb, targetRow, target)
+      optionView:add_child(targetRow)
+    end
+  end
+end
+
+-- The first target is displayed in the row of the option, the others below it
+function SubstitutionDialog:addMissingTargetCells(vb, firstRow, optionView, target, targetIndex)
+  local targetRow = firstRow
+  local indentWidth = LEADING_COLUMNS_WIDTH
+
+  if (targetIndex > 1) then
+    targetRow = vb:row { vb:space { width = indentWidth } }
+    optionView:add_child(targetRow)
+  end
+
+  self:addMissingTargetInfo(vb, targetRow, target)
 
   optionView:add_child(vb:row {
     vb:space { width = indentWidth },

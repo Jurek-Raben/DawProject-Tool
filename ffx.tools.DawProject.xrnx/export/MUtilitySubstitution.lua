@@ -9,6 +9,11 @@
 
 MUTILITY_CLASS_ID = '4D656C646170726F4D7574694D757469'
 
+-- Where the delay of a track is exported to, if its pre mixer is substituted
+TRACK_DELAY_TARGET_CONFIG_KEY = 'trackDelayTarget'
+TRACK_DELAY_IN_PLUGIN = 'plugin'
+TRACK_DELAY_IN_CLIPS = 'clips'
+
 -- Renoise uses a +3 dB pan law, the default of MUtility is +6 dB
 local RENOISE_PANNING_LAW_DB = 3
 
@@ -22,8 +27,20 @@ local function isDifferent(value, defaultValue)
   return math.abs(value - defaultValue) > VALUE_TOLERANCE
 end
 
-local function createSettingsXml(amplitude, panning, isLeftInverted, isRightInverted)
+-- A positive delay of Renoise is a plain delay. A negative one is reported as latency to the DAW.
+local function createDelayAttributes(delayMilliseconds)
+  if (delayMilliseconds == 0) then
+    return ' #DelayEnabledCollapsed="1"'
+  end
+
+  return ' #DelayEnabled="1" #DelayEnabledCollapsed="0" #DelayMilliseconds="' ..
+      MeldaPreset:formatNumber(math.abs(delayMilliseconds) / 1000) .. '"' ..
+      (delayMilliseconds < 0 and ' #DelayReportLatency="1"' or '')
+end
+
+local function createSettingsXml(amplitude, panning, isLeftInverted, isRightInverted, delayMilliseconds)
   local format = function(number) return MeldaPreset:formatNumber(number) end
+  local editorSize = delayMilliseconds == 0 and '812,463' or '910,533'
 
   return table.concat({
     '<?xml version="1.0" encoding="utf-8"?>\n<MUtilitysettings #="1"',
@@ -33,10 +50,10 @@ local function createSettingsXml(amplitude, panning, isLeftInverted, isRightInve
     ' #panlaw2="', format(RENOISE_PANNING_LAW_DB), '"',
     isLeftInverted and ' #InvertLeft="1"' or '',
     isRightInverted and ' #InvertRight="1"' or '',
-    ' #DCBlockerCollapsed="1" #DelayEnabledCollapsed="1" #RMSEnabledCollapsed="1"',
+    ' #DCBlockerCollapsed="1"', createDelayAttributes(delayMilliseconds), ' #RMSEnabledCollapsed="1"',
     ' #EnvelopeEnabledCollapsed="1" #MathEnabledCollapsed="1" #ExpressionEnabledCollapsed="1"',
     ' #Expression="x" #CoderCollapsed="1" Version="1114112" MIDIProgramChangeEnable="0"',
-    ' ProgramChangeCategorizer="0" EditorSize="812,463" ControllersEnabled="0" MetersCollapsedStereo="1"',
+    ' ProgramChangeCategorizer="0" EditorSize="', editorSize, '" ControllersEnabled="0" MetersCollapsedStereo="1"',
     ' MaxLFOBlockSize="32"><Meters2><WidthM><Source Prefiltering="0"/></WidthM></Meters2>\n',
     '</MUtilitysettings>\n',
   })
@@ -98,7 +115,8 @@ function MUtilityGainerSubstitution:createPresetData()
     self.device:parameter(self.gainParameterNum).value,
     self.device:parameter(self.panningParameterNum).value,
     isInverted('LPhaseInvert'),
-    isInverted('RPhaseInvert')
+    isInverted('RPhaseInvert'),
+    0
   ))
 end
 
@@ -117,8 +135,9 @@ class "MUtilityPreMixerSubstitution"
 MUtilityPreMixerSubstitution.classId = MUTILITY_CLASS_ID
 MUtilityPreMixerSubstitution.pluginName = 'MUtility'
 
-function MUtilityPreMixerSubstitution:__init(track)
+function MUtilityPreMixerSubstitution:__init(track, config)
   self.track = track
+  self.containsDelay = config[TRACK_DELAY_TARGET_CONFIG_KEY] == TRACK_DELAY_IN_PLUGIN
   self.volumeParameterNum = nil
   self.panningParameterNum = nil
 
@@ -139,12 +158,13 @@ function MUtilityPreMixerSubstitution:isUsed()
   local volume = self.track.prefx_volume
   local panning = self.track.prefx_panning
   return isDifferent(volume.value, 1) or isDifferent(panning.value, 0.5) or
-      volume.is_automated or panning.is_automated
+      volume.is_automated or panning.is_automated or (self.containsDelay and self.track.output_delay ~= 0)
 end
 
 function MUtilityPreMixerSubstitution:createPresetData()
   return MeldaPreset:create(MUTILITY_CLASS_ID,
-    createSettingsXml(self.track.prefx_volume.value, self.track.prefx_panning.value, false, false))
+    createSettingsXml(self.track.prefx_volume.value, self.track.prefx_panning.value, false, false,
+      self.containsDelay and self.track.output_delay or 0))
 end
 
 function MUtilityPreMixerSubstitution:mapAutomationValue(parameter, parameterNum, automationValue)

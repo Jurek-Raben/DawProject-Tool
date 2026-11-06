@@ -73,16 +73,18 @@ function DawProject:export()
 end
 
 function DawProject:configureSubstitutions()
-  -- nothing to choose on this operating system
-  if (#SubstitutionTable:getOptionsOfCurrentSystem() == 0) then
+  -- nothing to choose for this song on this operating system
+  local options = PluginSubstitutions:findOptionsUsedInSong()
+  if (#options == 0) then
     self:startExport()
     return
   end
 
   substitutionDialog:start(
+    options,
     config,
-    function(configKey, isEnabled)
-      config[configKey] = isEnabled
+    function(configKey, value)
+      config[configKey] = value
       self.configurator:setConfig(config)
     end,
     function() self:startExport() end

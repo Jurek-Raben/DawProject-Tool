@@ -1,13 +1,15 @@
 -------------------------------------------------------------------------------
--- EQ 5 Parameters, reads the bands of the Renoise EQ 5 for its substitutions.
--- The first and the last band are shelves, the others are peak filters.
+-- EQ Parameters, reads the bands of the Renoise EQ 5 and EQ 10 for their
+-- substitutions. The first and the last band are shelves, the others are peak
+-- filters.
 -- by Jurek Raben
 --
 -- Licensed under CC Attribution-NonCommercial-ShareAlike 4.0 International
 -- Info here: https://creativecommons.org/licenses/by-nc-sa/4.0/
 -------------------------------------------------------------------------------
 
-EQ5_NUM_BANDS = 5
+EQ5_LAYOUT = { numBands = 5, qFactorConfigKey = 'substituteEq5QFactor' }
+EQ10_LAYOUT = { numBands = 10, qFactorConfigKey = 'substituteEq10QFactor' }
 
 local function getParameterType(parameterName)
   local lowercaseName = parameterName:lower()
@@ -23,10 +25,12 @@ local function getParameterType(parameterName)
 end
 
 
-class "Eq5Parameters"
+class "EqParameters"
 
-function Eq5Parameters:__init(device)
+function EqParameters:__init(device, config, layout)
   self.device = device
+  self.numBands = layout.numBands
+  self.qFactor = 2 ^ (config[layout.qFactorConfigKey] or 0)
   self.parameterNums = { gain = {}, frequency = {}, bandwidth = {} }
   self.bandTargetByParameterNum = {}
 
@@ -41,27 +45,32 @@ function Eq5Parameters:__init(device)
   end
 end
 
-function Eq5Parameters:isUsable()
-  return #self.parameterNums.gain == EQ5_NUM_BANDS and #self.parameterNums.frequency == EQ5_NUM_BANDS and
-      #self.parameterNums.bandwidth == EQ5_NUM_BANDS
+function EqParameters:isUsable()
+  return #self.parameterNums.gain == self.numBands and #self.parameterNums.frequency == self.numBands and
+      #self.parameterNums.bandwidth == self.numBands
 end
 
-function Eq5Parameters:isShelf(band)
-  return band == 1 or band == EQ5_NUM_BANDS
+function EqParameters:isShelf(band)
+  return band == 1 or band == self.numBands
 end
 
-function Eq5Parameters:getValue(parameterType, band)
+function EqParameters:getValue(parameterType, band)
   return self.device:parameter(self.parameterNums[parameterType][band]).value
 end
 
+-- The factor of the dialog is multiplied, since the same difference would be huge for a low Q
+function EqParameters:applyQFactor(value)
+  return value * self.qFactor
+end
+
 -- Returns the band and the type of a parameter, or nil
-function Eq5Parameters:findTarget(parameterNum)
+function EqParameters:findTarget(parameterNum)
   return self.bandTargetByParameterNum[parameterNum]
 end
 
 -- Automation values are normalized. The range of a frequency is treated as logarithmic, like the
 -- slider of the device, and the other ones as linear.
-function Eq5Parameters:getAutomatedValue(parameter, target, automationValue)
+function EqParameters:getAutomatedValue(parameter, target, automationValue)
   local minValue, maxValue = parameter.value_min, parameter.value_max
   if (target.type == 'frequency') then
     return math.max(minValue, 1) * (maxValue / math.max(minValue, 1)) ^ automationValue

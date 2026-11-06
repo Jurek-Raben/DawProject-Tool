@@ -10,20 +10,22 @@
 
 require('export/MeldaScales')
 require('export/MUtilitySubstitution')
-require('export/Eq5Parameters')
+require('export/EqParameters')
 require('export/MEqualizerSubstitution')
 require('export/ShadeSubstitution')
+require('export/ZlEqualizerSubstitution')
 require('export/MCompressorSubstitution')
 
 local MELDA_DOWNLOAD_URL = 'https://www.meldaproduction.com/downloads'
 local UVI_SHADE_DOWNLOAD_URL = 'https://www.uvi.net/shade'
+local ZL_EQUALIZER_DOWNLOAD_URL = 'https://zl-audio.github.io/plugins'
 
--- create gets the Renoise device, or the track for a part of the track itself
+-- create gets the Renoise device and the config, or the track for a part of the track itself
 local MUTILITY_FOR_PRE_MIXER = {
   pluginName = 'Melda MUtility (VST3)',
   classId = MUTILITY_CLASS_ID,
   downloadUrl = MELDA_DOWNLOAD_URL,
-  create = function(track) return MUtilityPreMixerSubstitution(track) end,
+  create = function(track, config) return MUtilityPreMixerSubstitution(track, config) end,
 }
 
 local MUTILITY_FOR_GAINER = {
@@ -37,14 +39,35 @@ local MEQUALIZER_FOR_EQ5 = {
   pluginName = 'Melda MEqualizer (VST3)',
   classId = MEQUALIZER_CLASS_ID,
   downloadUrl = MELDA_DOWNLOAD_URL,
-  create = function(device) return MEqualizerSubstitution(device) end,
+  create = function(device, config) return MEqualizerSubstitution(device, config) end,
 }
 
 local SHADE_FOR_EQ5 = {
   pluginName = 'UVI Shade (VST3)',
   classId = SHADE_CLASS_ID,
   downloadUrl = UVI_SHADE_DOWNLOAD_URL,
-  create = function(device) return ShadeSubstitution(device) end,
+  create = function(device, config) return ShadeSubstitution(device, config, EQ5_LAYOUT) end,
+}
+
+local ZL_EQUALIZER_FOR_EQ5 = {
+  pluginName = 'ZL Equalizer 2 (VST3)',
+  classId = ZL_EQUALIZER_CLASS_ID,
+  downloadUrl = ZL_EQUALIZER_DOWNLOAD_URL,
+  create = function(device, config) return ZlEqualizerSubstitution(device, config, EQ5_LAYOUT) end,
+}
+
+local SHADE_FOR_EQ10 = {
+  pluginName = 'UVI Shade (VST3)',
+  classId = SHADE_CLASS_ID,
+  downloadUrl = UVI_SHADE_DOWNLOAD_URL,
+  create = function(device, config) return ShadeSubstitution(device, config, EQ10_LAYOUT) end,
+}
+
+local ZL_EQUALIZER_FOR_EQ10 = {
+  pluginName = 'ZL Equalizer 2 (VST3)',
+  classId = ZL_EQUALIZER_CLASS_ID,
+  downloadUrl = ZL_EQUALIZER_DOWNLOAD_URL,
+  create = function(device, config) return ZlEqualizerSubstitution(device, config, EQ10_LAYOUT) end,
 }
 
 local MCOMPRESSOR_FOR_COMPRESSOR = {
@@ -62,11 +85,12 @@ local MCOMPRESSOR_FOR_BUS_COMPRESSOR = {
 }
 
 -- The targets of an operating system are ordered by priority, the first installed one is used.
--- MeldaProduction has no plugins for Linux.
+-- MeldaProduction and UVI have no plugins for Linux.
 local SUBSTITUTIONS = {
   {
     configKey = 'substitutePreMixer',
-    title = 'Track pre gain and panning',
+    title = 'Track pre gain, panning, delay',
+    hasTrackDelayTarget = true,
     targets = { mac = { MUTILITY_FOR_PRE_MIXER }, win = { MUTILITY_FOR_PRE_MIXER } },
   },
   {
@@ -79,7 +103,23 @@ local SUBSTITUTIONS = {
     configKey = 'substituteEq5',
     title = 'EQ 5 devices',
     devicePath = 'Audio/Effects/Native/EQ 5',
-    targets = { mac = { SHADE_FOR_EQ5, MEQUALIZER_FOR_EQ5 }, win = { SHADE_FOR_EQ5, MEQUALIZER_FOR_EQ5 } },
+    qFactorConfigKey = EQ5_LAYOUT.qFactorConfigKey,
+    targets = {
+      mac = { SHADE_FOR_EQ5, ZL_EQUALIZER_FOR_EQ5, MEQUALIZER_FOR_EQ5 },
+      win = { SHADE_FOR_EQ5, ZL_EQUALIZER_FOR_EQ5, MEQUALIZER_FOR_EQ5 },
+      linux = { ZL_EQUALIZER_FOR_EQ5 },
+    },
+  },
+  {
+    configKey = 'substituteEq10',
+    title = 'EQ 10 devices',
+    devicePath = 'Audio/Effects/Native/EQ 10',
+    qFactorConfigKey = EQ10_LAYOUT.qFactorConfigKey,
+    targets = {
+      mac = { SHADE_FOR_EQ10, ZL_EQUALIZER_FOR_EQ10 },
+      win = { SHADE_FOR_EQ10, ZL_EQUALIZER_FOR_EQ10 },
+      linux = { ZL_EQUALIZER_FOR_EQ10 },
+    },
   },
   {
     configKey = 'substituteCompressor',
@@ -109,6 +149,8 @@ function SubstitutionTable:getOptionsOfCurrentSystem()
         configKey = substitution.configKey,
         title = substitution.title,
         devicePath = substitution.devicePath,
+        qFactorConfigKey = substitution.qFactorConfigKey,
+        hasTrackDelayTarget = substitution.hasTrackDelayTarget,
         targets = targets,
       })
     end

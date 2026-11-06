@@ -15,10 +15,12 @@ local PARAMETERS_PER_BAND = 7
 local FREQUENCY_OFFSET = 1
 local GAIN_OFFSET = 2
 local Q_OFFSET = 3
+local MIN_Q = 0.05
+local MAX_Q = 20
 
 local BAND_TYPE_ATTRIBUTES = {
   [1] = ' type="LowShelf"',
-  [EQ5_NUM_BANDS] = ' type="HighShelf"',
+  [EQ5_LAYOUT.numBands] = ' type="HighShelf"',
 }
 
 -- MEqualizer always has 6 bands, the last one is not used
@@ -35,28 +37,27 @@ class "MEqualizerSubstitution"
 MEqualizerSubstitution.classId = MEQUALIZER_CLASS_ID
 MEqualizerSubstitution.pluginName = 'MEqualizer'
 
-function MEqualizerSubstitution:__init(device)
-  self.eq5 = Eq5Parameters(device)
+function MEqualizerSubstitution:__init(device, config)
+  self.eq = EqParameters(device, config, EQ5_LAYOUT)
 end
 
 function MEqualizerSubstitution:isUsable()
-  return self.eq5:isUsable()
+  return self.eq:isUsable()
 end
 
 function MEqualizerSubstitution:getBandQ(band, bandwidth)
-  if (self.eq5:isShelf(band)) then
-    return MeldaScales:shelfBandwidthToQ(bandwidth)
-  end
-  return MeldaScales:peakBandwidthToQ(bandwidth)
+  local q = self.eq:isShelf(band) and MeldaScales:shelfBandwidthToQ(bandwidth) or
+      MeldaScales:peakBandwidthToQ(bandwidth)
+  return math.max(MIN_Q, math.min(self.eq:applyQFactor(q), MAX_Q))
 end
 
 function MEqualizerSubstitution:createBandXml(band)
   local format = function(number) return MeldaPreset:formatNumber(number) end
 
   return table.concat({
-    '<point X="', format(MeldaScales:frequencyToLogarithm(self.eq5:getValue('frequency', band))), '"',
-    ' Y="', format(self.eq5:getValue('gain', band)), '"',
-    ' q="', format(self:getBandQ(band, self.eq5:getValue('bandwidth', band))), '"',
+    '<point X="', format(MeldaScales:frequencyToLogarithm(self.eq:getValue('frequency', band))), '"',
+    ' Y="', format(self.eq:getValue('gain', band)), '"',
+    ' q="', format(self:getBandQ(band, self.eq:getValue('bandwidth', band))), '"',
     BAND_TYPE_ATTRIBUTES[band] or '',
     ' Harmonics.Semitones="12.0000000894"/>',
   })
@@ -64,7 +65,7 @@ end
 
 function MEqualizerSubstitution:createPresetData()
   local bands = {}
-  for band = 1, EQ5_NUM_BANDS do
+  for band = 1, EQ5_LAYOUT.numBands do
     bands[band] = self:createBandXml(band)
   end
   return MeldaPreset:create(MEQUALIZER_CLASS_ID,
@@ -72,13 +73,13 @@ function MEqualizerSubstitution:createPresetData()
 end
 
 function MEqualizerSubstitution:mapAutomationValue(parameter, parameterNum, automationValue)
-  local target = self.eq5:findTarget(parameterNum)
+  local target = self.eq:findTarget(parameterNum)
   if (target == nil) then
     return {}
   end
 
   local firstParameter = FIRST_BAND_PARAMETER + (target.band - 1) * PARAMETERS_PER_BAND
-  local value = self.eq5:getAutomatedValue(parameter, target, automationValue)
+  local value = self.eq:getAutomatedValue(parameter, target, automationValue)
 
   if (target.type == 'frequency') then
     return { {

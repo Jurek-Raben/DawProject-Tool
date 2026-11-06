@@ -19,6 +19,10 @@ ToolConfig.defaults = {
   substituteEq5 = true,
   substituteCompressor = false,
   substituteBusCompressor = false,
+  substituteEq10 = true,
+  trackDelayTarget = 'clips',
+  substituteEq5QFactor = 0,
+  substituteEq10QFactor = 0,
   devMode = true,
   useVST2InfoTool = true,
   useVST3InfoTool = true
@@ -33,13 +37,14 @@ ToolConfig.descriptions = {
   devMode = { type = "boolean", txt = "Adds some debugging menu entries / functionality" },
   useVST2InfoTool = { type = "boolean", txt = "Hacky workaround using a binary tool for plugin id extraction" },
   useVST3InfoTool = { type = "boolean", txt = "Hacky workaround using a binary tool for parameter id extraction" },
+  substituteEq5 = { type = "boolean", txt = "Export EQ 5 devices as plugin" },
+  substituteEq10 = { type = "boolean", txt = "Export EQ 10 devices as plugin" },
 }
 
 -- MeldaProduction has no plugins for Linux, see the substitution table
 if (os.platform() ~= 'LINUX') then
-  ToolConfig.descriptions.substitutePreMixer = { type = "boolean", txt = "Export the track pre gain and panning as Melda MUtility" }
+  ToolConfig.descriptions.substitutePreMixer = { type = "boolean", txt = "Export the track pre gain, panning and delay as Melda MUtility" }
   ToolConfig.descriptions.substituteGainer = { type = "boolean", txt = "Export Gainer devices as Melda MUtility" }
-  ToolConfig.descriptions.substituteEq5 = { type = "boolean", txt = "Export EQ 5 devices as Melda MEqualizer" }
   ToolConfig.descriptions.substituteCompressor = { type = "boolean", txt = "Export Compressor devices as Melda MCompressor" }
   ToolConfig.descriptions.substituteBusCompressor = { type = "boolean", txt = "Export Bus Compressor devices as Melda MCompressor" }
 end
