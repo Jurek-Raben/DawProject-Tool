@@ -30,6 +30,180 @@ NoteAbstraction.automationCache = Cache()
 
 function NoteAbstraction:__init()
   self.automationCache = Cache()
+  self.instrumentPools = {}
+  self.visibleNoteColumns = {}
+end
+
+-- Hidden note columns keep their data, but Renoise doesn't play them
+function NoteAbstraction:isNoteColumnVisible(position)
+  local visibleNoteColumns = self.visibleNoteColumns[position.track]
+  if (visibleNoteColumns == nil) then
+    visibleNoteColumns = Song:track(position.track).visible_note_columns
+    self.visibleNoteColumns[position.track] = visibleNoteColumns
+  end
+  return position.column <= visibleNoteColumns
+end
+
+-- Returns the instrument of a note as index of Song.instruments.
+-- Without a valid instrument, the note uses the last instrument of its column.
+function NoteAbstraction:getNoteInstrument(noteColumn, noteKey, lastInstruments)
+  local instrumentValue = noteColumn.instrument_value
+  if (instrumentValue ~= renoise.PatternLine.EMPTY_INSTRUMENT and instrumentValue < #Song.instruments) then
+    lastInstruments[noteKey] = instrumentValue + 1
+  end
+  return lastInstruments[noteKey]
+end
+
+-- Collects the instruments played on each track, so a track can be split by instrument.
+-- This has to happen first, since the automation targets depend on the result.
+function NoteAbstraction:collectInstrumentPools(yieldCallback)
+  local pools = {}
+  local lastInstruments = {}
+  local numSlots = #Song.sequencer.pattern_sequence
+
+  for seqIndex = 1, numSlots do
+    local mutedTracks = {}
+
+    for position, noteColumn in Song.pattern_iterator:note_columns_in_pattern(Song.sequencer:pattern(seqIndex)) do
+      if (noteColumn.note_value < renoise.PatternLine.NOTE_OFF and self:isNoteColumnVisible(position)) then
+        local trackNum = position.track
+        local noteKey = position.column .. "_" .. trackNum
+        local instrumentNum = self:getNoteInstrument(noteColumn, noteKey, lastInstruments)
+
+        if (instrumentNum ~= nil) then
+          if (pools[trackNum] == nil) then
+            pools[trackNum] = { instruments = {}, counts = {}, audibleCounts = {}, slots = {}, primary = nil }
+          end
+          local pool = pools[trackNum]
+
+          if (pool.counts[instrumentNum] == nil) then
+            table.insert(pool.instruments, instrumentNum)
+            pool.counts[instrumentNum] = 0
+            pool.audibleCounts[instrumentNum] = 0
+          end
+          pool.counts[instrumentNum] = pool.counts[instrumentNum] + 1
+
+          if (mutedTracks[trackNum] == nil) then
+            mutedTracks[trackNum] = Song.sequencer:track_sequence_slot_is_muted(trackNum, seqIndex)
+          end
+          if (not mutedTracks[trackNum]) then
+            pool.audibleCounts[instrumentNum] = pool.audibleCounts[instrumentNum] + 1
+          end
+
+          if (pool.slots[seqIndex] == nil) then
+            pool.slots[seqIndex] = {}
+          end
+          pool.slots[seqIndex][instrumentNum] = (pool.slots[seqIndex][instrumentNum] or 0) + 1
+        end
+      end
+    end
+
+    if (yieldCallback ~= nil and seqIndex % 4 == 0) then
+      yieldCallback(seqIndex / numSlots)
+    end
+  end
+
+  -- The primary instrument is the most played one, muted notes only count if there are no others
+  for _, pool in pairs(pools) do
+    local primaryAudibleCount = -1
+    local primaryCount = -1
+    for _, instrumentNum in ipairs(pool.instruments) do
+      local audibleCount = pool.audibleCounts[instrumentNum]
+      local count = pool.counts[instrumentNum]
+      if (audibleCount > primaryAudibleCount or (audibleCount == primaryAudibleCount and count > primaryCount)) then
+        pool.primary = instrumentNum
+        primaryAudibleCount = audibleCount
+        primaryCount = count
+      end
+    end
+  end
+
+  self.instrumentPools = pools
+  return pools
+end
+
+-- The most played instrument of a sequence slot
+function NoteAbstraction:getSlotInstrument(pool, seqIndex)
+  local slotInstrument = nil
+  local slotCount = 0
+  for instrumentNum, count in pairs(pool.slots[seqIndex] or {}) do
+    if (count > slotCount or (count == slotCount and instrumentNum < slotInstrument)) then
+      slotInstrument = instrumentNum
+      slotCount = count
+    end
+  end
+  return slotInstrument or pool.primary
+end
+
+function NoteAbstraction:instrumentHasParametersOfDevice(instrumentNum, device, patternTrack)
+  local pluginDevice = Song:instrument(instrumentNum).plugin_properties.plugin_device
+  if (pluginDevice == nil) then
+    return false
+  end
+
+  local cacheKey = 'paramnames_' .. instrumentNum
+  local parameterNames = self.automationCache:get(cacheKey)
+  if (parameterNames == nil) then
+    parameterNames = {}
+    for paramIndex = 1, #pluginDevice.parameters do
+      parameterNames[pluginDevice:parameter(paramIndex).name] = true
+    end
+    self.automationCache:set(cacheKey, parameterNames)
+  end
+
+  for paramIndex = 1, #device.parameters do
+    local parameter = device:parameter(paramIndex)
+    if (parameter.is_automated and patternTrack:find_automation(parameter) ~= nil and not parameterNames[parameter.name]) then
+      return false
+    end
+  end
+  return true
+end
+
+-- The target of the instrument devices can't be read via API, so it has to be determined.
+-- If that is ambiguous, the instrument playing in the current sequence slot is used.
+function NoteAbstraction:findAutomationTargetInstrument(device, deviceIndex, track, trackNum, seqIndex, patternTrack)
+  local pool = self.instrumentPools[trackNum]
+
+  if (pool == nil) then
+    local cacheKey = 'instrnum_' .. trackNum
+    local instrumentNum = self.automationCache:get(cacheKey)
+    if (instrumentNum == nil) then
+      -- also remember tracks without an instrument, searching the whole song is expensive
+      instrumentNum = SongHelpers:getInstrumentIndexOfTrack(track) or false
+      self.automationCache:set(cacheKey, instrumentNum)
+    end
+    return instrumentNum or nil
+  end
+
+  local slotInstrument = self:getSlotInstrument(pool, seqIndex)
+  if (#pool.instruments == 1 or device.device_path == "Audio/Effects/Native/*Instr. MIDI Control") then
+    return slotInstrument
+  end
+
+  local firstMatch = nil
+  local numMatches = 0
+  local isMatching = {}
+  for _, instrumentNum in ipairs(pool.instruments) do
+    if (self:instrumentHasParametersOfDevice(instrumentNum, device, patternTrack)) then
+      firstMatch = firstMatch or instrumentNum
+      numMatches = numMatches + 1
+      isMatching[instrumentNum] = true
+    end
+  end
+
+  if (numMatches > 1) then
+    self:warnOnceIfAutomated(device, trackNum, deviceIndex, 'warning: target of ' .. device.name .. ' at track ' ..
+      trackNum .. ' is ambiguous, using the instrument playing in each pattern')
+  end
+
+  if (isMatching[slotInstrument]) then
+    return slotInstrument
+  end
+  if (isMatching[pool.primary]) then
+    return pool.primary
+  end
+  return firstMatch or slotInstrument
 end
 
 function NoteAbstraction:generateSongEvents(yieldCallback)
@@ -38,6 +212,7 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
 
   local activeNotes = {}
   local lastVelocities = {}
+  local lastInstruments = {}
   local lastPointValues = {}
 
   local noteKey = nil
@@ -54,6 +229,10 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
     patternLines = pattern.number_of_lines
 
     for position, noteColumn in Song.pattern_iterator:note_columns_in_pattern(patternIndex) do
+      if (not self:isNoteColumnVisible(position)) then
+        goto continue
+      end
+
       noteKey = position.column .. "_" .. position.track
 
       local checkForNoteOffEvent = function(_noteKey)
@@ -87,15 +266,15 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
           checkForNoteOffEvent(noteKey)
         end
 
-        usedTypes = NoteAbstraction:addGraphicalTrackAutomation(automationEvents, position.track,
-          pattern:track(position.track), lineOffset, lastPointValues)
+        usedTypes = self:addGraphicalTrackAutomation(automationEvents, position.track,
+          pattern:track(position.track), lineOffset, lastPointValues, seqIndex)
 
         if (yieldCallback ~= nil and seqIndex % 4 == 0) then
           yieldCallback(seqIndex / #Song.sequencer.pattern_sequence)
         end
       end
 
-      NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, position, noteColumn, lineOffset, usedTypes)
+      self:addPatternTrackAutomation(automationEvents, pattern, position, noteColumn, lineOffset, usedTypes)
 
       checkForPressureAutomationEvent(noteKey)
 
@@ -120,6 +299,7 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
           patternDuration = patternLines * 256,
           columnNum = position.column,
           trackNum = position.track,
+          instrumentNum = self:getNoteInstrument(noteColumn, noteKey, lastInstruments),
           lineNum = position.line - 1,
           absLineNum = lineOffset + position.line - 1,
           timestamp = (lineOffset + position.line - 1) * 256 + noteColumn.delay_value,
@@ -190,13 +370,14 @@ function NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, po
       {
         device = Song:instrument(noteColumn.instrument_value + 1).plugin_properties.plugin_device,
         deviceIndex = "i" .. (noteColumn.instrument_value + 1),
+        instrumentNum = noteColumn.instrument_value + 1,
         trackNum = position.track,
         paramIndex = tonumber("0x" .. fxColumn.number_string, 16),
         type = 'CC',
         parameterName = 'CC #' .. fxColumn.number_string,
         timestamp = (lineOffset + position.line - 1) * 256 + noteColumn.delay_value,
         value = tonumber("0x" .. fxColumn.amount_string, 16) / 0x7f,
-        interpolation = 'linear',
+        interpolation = 'hold', -- a pattern command stays active until the next one
         scaling = 1
       }
     )
@@ -208,13 +389,14 @@ function NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, po
       {
         device = Song:instrument(noteColumn.instrument_value + 1).plugin_properties.plugin_device,
         deviceIndex = "i" .. (noteColumn.instrument_value + 1),
+        instrumentNum = noteColumn.instrument_value + 1,
         trackNum = position.track,
         paramIndex = 200000, -- fake index
         type = 'PB',
         parameterName = 'Pitchbend',
         timestamp = (lineOffset + position.line - 1) * 256 + noteColumn.delay_value,
         value = tonumber("0x" .. fxColumn.number_string .. fxColumn.amount_string, 16) / 0x7fff,
-        interpolation = 'linear',
+        interpolation = 'hold', -- a pattern command stays active until the next one
         scaling = 1,
       }
     )
@@ -226,13 +408,14 @@ function NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, po
       {
         device = Song:instrument(noteColumn.instrument_value + 1).plugin_properties.plugin_device,
         deviceIndex = "i" .. (noteColumn.instrument_value + 1),
+        instrumentNum = noteColumn.instrument_value + 1,
         trackNum = position.track,
         paramIndex = 200001, -- fake index
         type = 'CP',
         parameterName = 'Channel Pressure',
         timestamp = (lineOffset + position.line - 1) * 256 + noteColumn.delay_value,
         value = tonumber("0x" .. fxColumn.number_string .. fxColumn.amount_string, 16) / 0x7f,
-        interpolation = 'linear',
+        interpolation = 'hold', -- a pattern command stays active until the next one
         scaling = 1
       }
     )
@@ -244,22 +427,23 @@ function NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, po
       {
         device = Song:instrument(noteColumn.instrument_value + 1).plugin_properties.plugin_device,
         deviceIndex = "i" .. (noteColumn.instrument_value + 1),
+        instrumentNum = noteColumn.instrument_value + 1,
         trackNum = position.track,
         paramIndex = 200002, -- fake index
         type = 'Prg',
         parameterName = 'Program Change',
         timestamp = (lineOffset + position.line - 1) * 256 + noteColumn.delay_value,
         value = tonumber("0x" .. fxColumn.number_string .. fxColumn.amount_string, 16) / 0x7f,
-        interpolation = 'linear',
+        interpolation = 'hold', -- a pattern command stays active until the next one
         scaling = 1
       }
     )
   end
 end
 
--- A device without a target only matters, if it is automated. Warns once per device.
-function NoteAbstraction:warnAboutSkippedAutomation(device, trackNum, deviceIndex, reason)
-  local cacheKey = 'skipped_' .. trackNum .. '_' .. deviceIndex
+-- A problem with the target of a device only matters, if it is automated. Warns once per device.
+function NoteAbstraction:warnOnceIfAutomated(device, trackNum, deviceIndex, message)
+  local cacheKey = 'warned_' .. trackNum .. '_' .. deviceIndex
   if (self.automationCache:get(cacheKey)) then
     return
   end
@@ -267,20 +451,26 @@ function NoteAbstraction:warnAboutSkippedAutomation(device, trackNum, deviceInde
 
   for paramIndex = 1, #device.parameters do
     if (device:parameter(paramIndex).is_automated) then
-      print('warning: skipping automation of ' .. device.name .. ' at track ' .. trackNum .. ': ' .. reason)
+      print(message)
       return
     end
   end
 end
 
+function NoteAbstraction:warnAboutSkippedAutomation(device, trackNum, deviceIndex, reason)
+  self:warnOnceIfAutomated(device, trackNum, deviceIndex,
+    'warning: skipping automation of ' .. device.name .. ' at track ' .. trackNum .. ': ' .. reason)
+end
+
 function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum, patternTrack, lineOffset,
-                                                     lastPointValues)
+                                                     lastPointValues, seqIndex)
   local usedTypes = {}
   local track = Song:track(trackNum)
 
   for deviceIndex = 2, #track.devices do
     local device = track:device(deviceIndex)
     local targetDevice
+    local eventInstrumentNum
     local deviceIndexString = tostring(deviceIndex)
 
     local getIndex = function(paramNum)
@@ -291,15 +481,7 @@ function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum,
     end
 
     local getInstrNum = function()
-      local instrCacheKey = 'instrnum_' .. trackNum
-      local targetInstrumentNum = self.automationCache:get(instrCacheKey)
-      if (targetInstrumentNum == nil) then
-        -- also remember tracks without an instrument, searching the whole song is expensive
-        targetInstrumentNum = SongHelpers:getInstrumentIndexOfTrack(track) or false
-        self.automationCache:set(instrCacheKey, targetInstrumentNum)
-      end
-
-      return targetInstrumentNum or nil
+      return self:findAutomationTargetInstrument(device, deviceIndex, track, trackNum, seqIndex, patternTrack)
     end
 
     if (device.device_path == "Audio/Effects/Native/*Instr. Automation") then
@@ -312,6 +494,7 @@ function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum,
       else
         targetDevice = Song:instrument(targetInstrumentNum).plugin_properties.plugin_device
         deviceIndexString = "i" .. targetInstrumentNum
+        eventInstrumentNum = targetInstrumentNum
 
         if (targetDevice == nil) then
           self:warnAboutSkippedAutomation(device, trackNum, deviceIndex, 'the instrument on this track is no plugin')
@@ -319,7 +502,7 @@ function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum,
         end
 
         getIndex = function(paramNum)
-          local cacheKey = trackNum .. deviceIndex .. '_' .. paramNum
+          local cacheKey = trackNum .. '_' .. deviceIndex .. '_' .. deviceIndexString .. '_' .. paramNum
           if (self.automationCache:get(cacheKey)) then
             return self.automationCache:get(cacheKey)
           end
@@ -345,6 +528,7 @@ function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum,
       else
         targetDevice = Song:instrument(targetInstrumentNum).plugin_properties.plugin_device
         deviceIndexString = "i" .. targetInstrumentNum
+        eventInstrumentNum = targetInstrumentNum
 
         getIndex = function(paramNum)
           return tonumber(DeviceHelpers:getActivePresetDataContent(device, 'ControllerNumber' .. paramNum - 1))
@@ -377,8 +561,9 @@ function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum,
           goto continue2
         end
 
-        local lastPointIndex = trackNum ..
-            deviceIndex ..
+        local lastPointIndex = trackNum .. '_' ..
+            deviceIndex .. '_' ..
+            deviceIndexString .. '_' ..
             _paramIndex -- fixme doesn't work for entries on the very left, ugly too
 
         if (_type ~= nil) then
@@ -389,6 +574,7 @@ function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum,
                 {
                   device = targetDevice,
                   deviceIndex = deviceIndexString,
+                  instrumentNum = eventInstrumentNum,
                   trackNum = trackNum,
                   paramIndex = _paramIndex,
                   type = _type,

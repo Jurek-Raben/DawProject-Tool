@@ -10,10 +10,26 @@
 
 local DIALOG_TITLE = 'DAW Project'
 local DIALOG_WIDTH = 560
+local PERCENTAGE_WIDTH = 40
 local LOG_HEIGHT = 280
 local TIMER_INTERVAL_MS = 100
+local TIMER_TICKS_PER_ANIMATION_STEP = 4
+local NUM_ANIMATION_DOTS = 3
+local PROBLEMS_HEIGHT = 110
+local WARNING_COLOR = { 255, 170, 40 }
+local ERROR_COLOR = { 255, 80, 80 }
+
+-- Text views grow with their text, which would change the layout of the dialog
+local MAX_STATUS_LENGTH = 80
 
 local activeDialog = nil
+
+local function truncateText(text, maxLength)
+  if (string.len(text) <= maxLength) then
+    return text
+  end
+  return string.sub(text, 1, maxLength - 3) .. '...'
+end
 
 -- All messages also end up in the log of the currently active dialog
 local consolePrint = print
@@ -37,10 +53,16 @@ function ProgressDialog:__init()
   self.running = false
   self.onCancel = nil
   self.pendingLogLines = {}
-  self.warningCount = 0
+  self.problems = {}
+  self.pendingProblemLines = {}
+  self.hasErrors = false
   self.phaseStart = 0
   self.phaseEnd = 1
   self.phaseSteps = 0
+  self.status = ''
+  self.progress = 0
+  self.animationDots = 1
+  self.animationTicks = 0
   self.onTimer = function()
     self:update()
   end
@@ -53,16 +75,25 @@ function ProgressDialog:start(title, onCancel)
   self.running = true
   self.onCancel = onCancel
   self.pendingLogLines = {}
-  self.warningCount = 0
+  self.problems = {}
+  self.pendingProblemLines = {}
+  self.hasErrors = false
   self.phaseStart = 0
   self.phaseEnd = 1
   self.phaseSteps = 0
+  self.status = 'Starting'
+  self.progress = 0
+  self.animationDots = 1
+  self.animationTicks = 0
 
   local vb = renoise.ViewBuilder()
 
   self.statusView = vb:text {
-    text = title .. '...',
-    width = DIALOG_WIDTH,
+    width = DIALOG_WIDTH - PERCENTAGE_WIDTH,
+  }
+  self.percentageView = vb:text {
+    width = PERCENTAGE_WIDTH,
+    align = 'right',
   }
   self.progressView = vb:minislider {
     min = 0,
@@ -97,10 +128,33 @@ function ProgressDialog:start(title, onCancel)
     style = 'border',
     visible = false,
   }
+
+  -- A multiline field can be scrolled and selected, but can't color its lines.
+  -- So the color of the header shows the most severe problem.
+  self.problemsHeaderView = vb:text {
+    width = DIALOG_WIDTH,
+    font = 'bold',
+    style = 'custom',
+    color = WARNING_COLOR,
+  }
+  self.problemLinesView = vb:multiline_textfield {
+    width = DIALOG_WIDTH,
+    height = PROBLEMS_HEIGHT,
+    font = 'mono',
+  }
+  self.problemsView = vb:column {
+    visible = false,
+    self.problemsHeaderView,
+    self.problemLinesView,
+  }
+
   self.contentView = vb:column {
     margin = 8,
     spacing = 6,
-    self.statusView,
+    vb:row {
+      self.statusView,
+      self.percentageView,
+    },
     self.progressView,
     vb:row {
       spacing = 4,
@@ -108,10 +162,14 @@ function ProgressDialog:start(title, onCancel)
       vb:space { width = DIALOG_WIDTH - 2 * 80 - 2 * 4 },
       self.actionButton,
     },
+    self.problemsView,
     self.logView,
   }
 
-  self.dialog = renoise.app():show_custom_dialog(DIALOG_TITLE .. ' - ' .. title, self.contentView)
+  self:updateStatusView()
+  self:updateProblemViews()
+
+  self.dialog = renoise.app():show_custom_dialog(DIALOG_TITLE .. ' - ' .. title .. '...', self.contentView)
   activeDialog = self
   renoise.tool():add_timer(self.onTimer, TIMER_INTERVAL_MS)
 end
@@ -136,20 +194,47 @@ function ProgressDialog:advancePhase(totalSteps)
 end
 
 function ProgressDialog:setStatus(status)
-  if (self.statusView ~= nil) then
-    self.statusView.text = status
-  end
+  self.status = status
+  self:updateStatusView()
 end
 
 function ProgressDialog:setProgress(fraction)
+  self.progress = math.max(0, math.min(fraction, 1))
   if (self.progressView ~= nil) then
-    self.progressView.value = math.max(0, math.min(fraction, 1))
+    self.progressView.value = self.progress
+  end
+  self:updateStatusView()
+end
+
+-- While running, the status has animated dots and the percentage is shown above the end of the progress bar
+function ProgressDialog:updateStatusView()
+  if (self.statusView == nil) then
+    return
+  end
+  if (self.running) then
+    self.statusView.text = truncateText(self.status, MAX_STATUS_LENGTH) .. string.rep('.', self.animationDots)
+    self.percentageView.text = math.floor(self.progress * 100) .. '%'
+  else
+    self.statusView.text = truncateText(self.status, MAX_STATUS_LENGTH)
+    self.percentageView.text = ''
+  end
+end
+
+function ProgressDialog:advanceAnimation()
+  self.animationTicks = self.animationTicks + 1
+  if (self.animationTicks >= TIMER_TICKS_PER_ANIMATION_STEP) then
+    self.animationTicks = 0
+    self.animationDots = self.animationDots % NUM_ANIMATION_DOTS + 1
+    self:updateStatusView()
   end
 end
 
 function ProgressDialog:addLogMessage(message)
-  if (string.find(message, '^warning:') ~= nil or string.find(message, '^error:') ~= nil) then
-    self.warningCount = self.warningCount + 1
+  local isError = string.find(message, '^error:') ~= nil
+  if (isError or string.find(message, '^warning:') ~= nil) then
+    table.insert(self.problems, message)
+    table.insert(self.pendingProblemLines, message)
+    self.hasErrors = self.hasErrors or isError
   end
   table.insert(self.pendingLogLines, message)
 end
@@ -157,10 +242,27 @@ end
 function ProgressDialog:setLogVisible(isVisible)
   self.logView.visible = isVisible
   self.logToggleButton.text = isVisible and 'Hide log' or 'Show log'
-  self.contentView:resize()
+  self:updateProblemViews()
   if (isVisible) then
     self.logView:scroll_to_last_line()
   end
+end
+
+-- Shows the warnings and errors above the log, as soon as there are any
+function ProgressDialog:updateProblemViews()
+  self.problemsHeaderView.text = 'Warnings and errors: ' .. #self.problems
+  self.problemsHeaderView.color = self.hasErrors and ERROR_COLOR or WARNING_COLOR
+
+  if (#self.pendingProblemLines > 0) then
+    for _, line in ipairs(self.pendingProblemLines) do
+      self.problemLinesView:add_line(line)
+    end
+    self.pendingProblemLines = {}
+    self.problemLinesView:scroll_to_last_line()
+  end
+
+  self.problemsView.visible = #self.problems > 0
+  self.contentView:resize()
 end
 
 function ProgressDialog:flushLog()
@@ -172,6 +274,7 @@ function ProgressDialog:flushLog()
   end
   self.pendingLogLines = {}
   self.logView:scroll_to_last_line()
+  self:updateProblemViews()
 end
 
 function ProgressDialog:update()
@@ -184,6 +287,7 @@ function ProgressDialog:update()
     return
   end
   self:flushLog()
+  self:advanceAnimation()
 end
 
 function ProgressDialog:stopTimer()
@@ -199,8 +303,8 @@ function ProgressDialog:finish(status)
   self.running = false
   activeDialog = nil
 
-  if (self.warningCount > 0) then
-    status = status .. ' (' .. self.warningCount .. ' warnings, see log)'
+  if (#self.problems > 0) then
+    status = status .. ' (' .. #self.problems .. ' warnings)'
   end
   self:setProgress(1)
   self:setStatus(status)
@@ -221,13 +325,7 @@ end
 
 function ProgressDialog:cancel()
   local onCancel = self.onCancel
-  self:flushLog()
-  self:stopTimer()
-  self.running = false
-  activeDialog = nil
-
-  self:setStatus('Cancelled')
-  self.actionButton.text = 'Close'
+  self:close()
   if (onCancel ~= nil) then
     onCancel()
   end
@@ -244,8 +342,12 @@ function ProgressDialog:close()
   end
   self.dialog = nil
   self.statusView = nil
+  self.percentageView = nil
   self.progressView = nil
   self.logView = nil
+  self.problemsView = nil
+  self.problemsHeaderView = nil
+  self.problemLinesView = nil
   self.actionButton = nil
   self.logToggleButton = nil
   self.contentView = nil

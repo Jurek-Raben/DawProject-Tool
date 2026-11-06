@@ -40,6 +40,7 @@ DawProject.configurator = nil
 DawProject.automatedParametersCache = Cache()
 DawProject.instrIndexCache = Cache()
 DawProject.toolPluginCache = Cache()
+DawProject.instrumentPools = {}
 local config = {}
 
 TempDir = './tmp'
@@ -60,6 +61,7 @@ DawProject.defaultConfig = {
   exportVST2 = true,
   exportVST3 = true,
   addTrackDelayToClips = true,
+  splitTracksByInstrument = true,
   devMode = true,
   useVST2InfoTool = true,
   useVST3InfoTool = true
@@ -70,6 +72,7 @@ DawProject.configDescription = {
   exportVST2 = { type = "boolean", txt = "Export VST2 plugins (not possible due to api limitations)" },
   exportVST3 = { type = "boolean", txt = "Export VST3 plugins" },
   addTrackDelayToClips = { type = "boolean", txt = "Add the track delay ms to the clip position" },
+  splitTracksByInstrument = { type = "boolean", txt = "Export tracks with multiple instruments as group with one track per instrument" },
   devMode = { type = "boolean", txt = "Adds some debugging menu entries / functionality" },
   useVST2InfoTool = { type = "boolean", txt = "Hacky workaround using a binary tool for plugin id extraction" },
   useVST3InfoTool = { type = "boolean", txt = "Hacky workaround using a binary tool for parameter id extraction" },
@@ -89,6 +92,7 @@ end
 --------------------------------------------------------------------------------
 
 SCALE_FACTOR = 1 / 256
+LANE_KEY_FACTOR = 1000
 
 function DawProject:generateMarkersDataForXML()
   local markers = {}
@@ -139,6 +143,50 @@ function DawProject:generateNotePressureEventsDataForXML(pressureTimeline)
   return points
 end
 
+-- A track with multiple instruments is exported as group with one track per instrument
+function DawProject:isTrackSplit(trackNum)
+  local pool = self.instrumentPools[trackNum]
+  return config['splitTracksByInstrument'] ~= false and pool ~= nil and #pool.instruments > 1
+end
+
+-- Lanes are stored with numeric keys, because xml2lua only repeats a tag for those
+function DawProject:getInstrumentLaneKey(trackNum, instrumentNum)
+  if (not self:isTrackSplit(trackNum)) then
+    return trackNum
+  end
+
+  local pool = self.instrumentPools[trackNum]
+  if (instrumentNum == nil or pool.counts[instrumentNum] == nil) then
+    instrumentNum = pool.primary
+  end
+  return trackNum * LANE_KEY_FACTOR + instrumentNum
+end
+
+-- Renoise transposes the notes it sends to a plugin, by the global transpose of the instrument
+-- and the transpose of its plugin settings. A sample instrument keeps its transpose setting in
+-- the Redux preset, so its notes must not be transposed a second time.
+function DawProject:getTransposedNoteKey(noteEvent)
+  local pool = self.instrumentPools[noteEvent.trackNum]
+  local instrumentNum = noteEvent.instrumentNum or (pool and pool.primary)
+  if (instrumentNum == nil) then
+    return noteEvent.key
+  end
+
+  local instrument = Song:instrument(instrumentNum)
+  if (instrument.plugin_properties.plugin_device == nil) then
+    return noteEvent.key
+  end
+  local transpose = instrument.transpose + instrument.plugin_properties.transpose
+  return math.max(0, math.min(noteEvent.key + transpose, 127))
+end
+
+function DawProject:getLaneTrackId(laneKey)
+  if (laneKey < LANE_KEY_FACTOR) then
+    return 'track' .. laneKey
+  end
+  return 'track' .. math.floor(laneKey / LANE_KEY_FACTOR) .. '-i' .. (laneKey % LANE_KEY_FACTOR)
+end
+
 function DawProject:generateNoteEventsDataForXML(songEvents, automationPoints)
   local noteEvents = songEvents.noteEvents
 
@@ -148,25 +196,27 @@ function DawProject:generateNoteEventsDataForXML(songEvents, automationPoints)
   progressDialog:setPhase('Exporting notes', 0.85, 0.93)
 
   for noteIndex, noteEvent in ipairs(noteEvents) do
-    if (lanesObj[noteEvent.trackNum] == nil) then
-      lanesObj[noteEvent.trackNum] = {
+    local laneKey = self:getInstrumentLaneKey(noteEvent.trackNum, noteEvent.instrumentNum)
+
+    if (lanesObj[laneKey] == nil) then
+      lanesObj[laneKey] = {
         Clips = {
           _attr = {
-            id = 'clips' .. noteEvent.trackNum .. '-' .. noteEvent.seqNum,
+            id = 'clips' .. laneKey .. '-' .. noteEvent.seqNum,
           },
           Clip = {},
         },
         _attr = {
-          id = 'lanes' .. noteEvent.trackNum .. '-' .. noteEvent.seqNum,
-          track = 'track' .. noteEvent.trackNum
+          id = 'lanes' .. laneKey .. '-' .. noteEvent.seqNum,
+          track = self:getLaneTrackId(laneKey)
         },
-        Points = automationPoints[noteEvent.trackNum],
+        Points = automationPoints[laneKey],
       }
       progressDialog:setPhaseProgress(noteIndex / #noteEvents)
       coroutine.yield()
     end
 
-    local clips = lanesObj[noteEvent.trackNum].Clips.Clip
+    local clips = lanesObj[laneKey].Clips.Clip
     if (clips[noteEvent.seqNum] == nil) then
       local trackDelay = 0
       if (config['addTrackDelayToClips']) then
@@ -190,23 +240,23 @@ function DawProject:generateNoteEventsDataForXML(songEvents, automationPoints)
           Notes = {
             Note = {},
             _attr = {
-              id = 'notes' .. noteEvent.trackNum .. '-' .. noteEvent.seqNum
+              id = 'notes' .. laneKey .. '-' .. noteEvent.seqNum
             }
           },
           _attr = {
-            id = 'sublanes' .. noteEvent.trackNum .. '-' .. noteEvent.seqNum
+            id = 'sublanes' .. laneKey .. '-' .. noteEvent.seqNum
           }
         },
       }
     end
 
-    local notes = lanesObj[noteEvent.trackNum].Clips.Clip[noteEvent.seqNum].Lanes.Notes.Note
+    local notes = lanesObj[laneKey].Clips.Clip[noteEvent.seqNum].Lanes.Notes.Note
     notes[#notes + 1] = {
       _attr = {
         time = Helpers:round(noteEvent.patternRelTimestamp * scaleFactor, 6),
         duration = Helpers:round(noteEvent.duration * scaleFactor, 6),
         channel = 0,
-        key = noteEvent.key,
+        key = self:getTransposedNoteKey(noteEvent),
         vel = noteEvent.velocity,
         rel = noteEvent.releaseVelocity,
       },
@@ -218,12 +268,25 @@ function DawProject:generateNoteEventsDataForXML(songEvents, automationPoints)
         },
         RealPoint = self:generateNotePressureEventsDataForXML(noteEvent.pressureTimeline),
         _attr = {
-          id = 'polypressure' .. noteEvent.trackNum .. '-' .. noteEvent.seqNum .. '-' .. #notes,
+          id = 'polypressure' .. laneKey .. '-' .. noteEvent.seqNum .. '-' .. #notes,
           unit = 'linear',
         }
       } or nil
 
     }
+  end
+
+  -- automation without notes, e.g. of the effects on the group of a split track
+  for laneKey, points in pairs(automationPoints) do
+    if (lanesObj[laneKey] == nil) then
+      lanesObj[laneKey] = {
+        _attr = {
+          id = 'lanes' .. laneKey,
+          track = self:getLaneTrackId(laneKey)
+        },
+        Points = points,
+      }
+    end
   end
 
   return lanesObj
@@ -261,8 +324,14 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
     local paramIndex = automationEvent.paramIndex
     local parameterIdPrefix = 'paramid-' .. trackNum .. '-' .. automationEvent.deviceIndex
 
-    if (automationsObj[trackNum] == nil) then
-      automationsObj[trackNum] = {}
+    -- automation of an instrument belongs to its track, the rest to the track with the effects
+    local automationLaneKey = trackNum
+    if (automationEvent.instrumentNum ~= nil) then
+      automationLaneKey = self:getInstrumentLaneKey(trackNum, automationEvent.instrumentNum)
+    end
+
+    if (automationsObj[automationLaneKey] == nil) then
+      automationsObj[automationLaneKey] = {}
       progressDialog:setPhaseProgress(eventIndex / #automationEvents)
       coroutine.yield()
     end
@@ -289,13 +358,31 @@ function DawProject:generateAutomationEventsDataForXML(songEvents)
         RealPoint = {}
       }
       automationLanes[laneKey] = automationLane
-      table.insert(automationsObj[trackNum], automationLane)
+      table.insert(automationsObj[automationLaneKey], automationLane)
     end
 
     local points = automationLane.RealPoint
+    local pointTime = Helpers:round(automationEvent.timestamp * scaleFactor, 6)
+
+    -- Not every DAW respects "hold" on import. A point with the previous value directly before the
+    -- new value keeps the step, even if the points get interpolated linearly.
+    local previousPoint = points[#points]
+    if (previousPoint ~= nil and previousPoint._attr.interpolation == 'hold') then
+      local stepTime = Helpers:round(pointTime - scaleFactor, 6)
+      if (stepTime > previousPoint._attr.time) then
+        points[#points + 1] = {
+          _attr = {
+            time = stepTime,
+            value = previousPoint._attr.value,
+            interpolation = 'hold',
+          }
+        }
+      end
+    end
+
     points[#points + 1] = {
       _attr = {
-        time = Helpers:round(automationEvent.timestamp * scaleFactor, 6),
+        time = pointTime,
         value = Helpers:round(automationEvent.value, 6),
         interpolation = automationEvent.interpolation,
       }
@@ -443,7 +530,13 @@ function DawProject:addTrackToStructure(track, targetObj)
     _trackObj.Channel.Devices = devices
   end
 
-  if (track.type == renoise.Track.TRACK_TYPE_SEQUENCER) then
+  if (self:isTrackSplit(trackIndex)) then
+    _trackObj._attr['contentType'] = 'tracks'
+    _trackObj.Channel._attr['role'] = 'master'
+    for _, instrumentNum in ipairs(self.instrumentPools[trackIndex].instruments) do
+      self:addInstrumentTrackToStructure(track, trackIndex, instrumentNum, _trackObj)
+    end
+  elseif (track.type == renoise.Track.TRACK_TYPE_SEQUENCER) then
     _trackObj._attr['contentType'] = 'notes'
     _trackObj.Channel._attr['role'] = 'regular'
   elseif (track.type == renoise.Track.TRACK_TYPE_GROUP) then
@@ -463,6 +556,66 @@ function DawProject:addTrackToStructure(track, targetObj)
 
   targetObj.Track[#targetObj.Track + 1] = { _trackObj }
   return _trackObj
+end
+
+-- One instrument of a split track. The mixer settings and effects stay on the group.
+function DawProject:addInstrumentTrackToStructure(track, trackIndex, instrumentNum, groupObj)
+  local instrument = Song:instrument(instrumentNum)
+  local trackId = trackIndex .. '-i' .. instrumentNum
+  local trackName = Helpers:prepareNameForXML(track.name) .. ' ' .. Helpers:prepareNameForXML(instrument.name)
+
+  local instrumentTrackObj = {
+    _attr = {
+      id = 'track' .. trackId,
+      name = trackName,
+      color = '#' .. Helpers:rgbToHex(track.color[1], track.color[2], track.color[3]),
+      contentType = 'notes',
+    },
+    Channel = {
+      _attr = {
+        id = 'channel' .. trackId,
+        name = trackName,
+        audioChannels = '2',
+        role = 'regular',
+        solo = 'false',
+      },
+      Mute = {
+        _attr = {
+          id = 'mute' .. trackId,
+          value = 'false',
+        }
+      },
+      Pan = {
+        _attr = {
+          id = 'pan' .. trackId,
+          value = '0.5',
+          unit = "normalized",
+          min = '0',
+          max = '1',
+        }
+      },
+      Volume = {
+        _attr = {
+          id = 'vol' .. trackId,
+          min = '0',
+          max = '2',
+          unit = "linear",
+          value = '1',
+        }
+      },
+    }
+  }
+
+  local devices = {}
+  self:addInstrumentDevicesForXML(devices, instrument, instrumentNum, trackIndex, trackId)
+  if (#devices > 0) then
+    instrumentTrackObj.Channel.Devices = devices
+  end
+
+  if (groupObj.Track == nil) then
+    groupObj.Track = {}
+  end
+  groupObj.Track[#groupObj.Track + 1] = { instrumentTrackObj }
 end
 
 function DawProject:getParentTracksRecursively(parentTrackName, trackObjs)
@@ -495,58 +648,19 @@ function DawProject:generateParentTracksStructureDataForXML(trackName)
 end
 
 function DawProject:generateDevicesForXML(track)
-  local instr
   local devicesObj = {}
   local trackIndex = SongHelpers:getTrackIndex(track)
-  local instrIndex = self.instrIndexCache:get(trackIndex) or SongHelpers:getInstrumentIndexOfTrack(track)
-  self.instrIndexCache:set(trackIndex, instrIndex)
 
-  if (instrIndex) then
-    instr = Song:instrument(instrIndex)
-  end
+  -- the instruments of a split track are on the tracks inside of the group
+  if (not self:isTrackSplit(trackIndex)) then
+    local pool = self.instrumentPools[trackIndex]
+    local instrIndex = pool and pool.primary or self.instrIndexCache:get(trackIndex) or
+        SongHelpers:getInstrumentIndexOfTrack(track)
+    self.instrIndexCache:set(trackIndex, instrIndex)
 
-  -- vsti
-  if (instr and instr.plugin_properties and instr.plugin_properties.plugin_device) then
-    local deviceSavePath = 'instr-tr' .. trackIndex .. '-no' .. instrIndex ..
-        '-' .. Helpers:prepareFilenameForXML(instr.name)
-    local parameterIdPrefix = 'paramid-' .. trackIndex .. '-i' .. instrIndex
-    --print('matching instr parameterIdPrefix', parameterIdPrefix)
-
-    self:addDeviceObj(devicesObj, instr.plugin_properties.plugin_device, deviceSavePath, parameterIdPrefix,
-      'instrument', trackIndex)
-  end
-
-  -- native instr to redux
-  if (config['convertToRedux'] == true and instr and instr.plugin_properties.plugin_device == nil) then
-    local deviceSavePath = 'instr-tr' ..
-        trackIndex .. '-no' .. instrIndex .. '-' .. Helpers:prepareFilenameForXML(instr.name) .. '-reduxed'
-    -- convert Renoise instruments to Redux VST3
-    ReduxPluginHelpers:generateReduxPresetDataForInstrument(instr, TempDir .. "/plugins/" .. deviceSavePath)
-
-    devicesObj[#devicesObj + 1] = {
-      Vst3Plugin = {
-        _attr = {
-          id = 'plugin' .. trackIndex .. '-' .. #devicesObj,
-          deviceID = ReduxVST3Identifier,
-          deviceRole = 'instrument',
-          deviceName = 'Redux',
-          name = Helpers:prepareFilenameForXML(instr.name),
-          loaded = "true"
-        },
-        Enabled = {
-          _attr = {
-            id = 'enabled' .. trackIndex .. '-' .. #devicesObj,
-            value = 'true'
-          }
-        },
-        State = {
-          _attr = {
-            path = "plugins/" .. deviceSavePath .. ".vstpreset",
-            external = "false"
-          }
-        },
-      }
-    }
+    if (instrIndex) then
+      self:addInstrumentDevicesForXML(devicesObj, Song:instrument(instrIndex), instrIndex, trackIndex, trackIndex)
+    end
   end
 
   coroutine.yield()
@@ -561,6 +675,60 @@ function DawProject:generateDevicesForXML(track)
   end
 
   return devicesObj
+end
+
+-- trackId is the id of the target track, which differs from the Renoise track on split tracks
+function DawProject:addInstrumentDevicesForXML(devicesObj, instr, instrIndex, trackIndex, trackId)
+  -- vsti
+  if (instr and instr.plugin_properties and instr.plugin_properties.plugin_device) then
+    local deviceSavePath = 'instr-tr' .. trackIndex .. '-no' .. instrIndex ..
+        '-' .. Helpers:prepareFilenameForXML(instr.name)
+    local parameterIdPrefix = 'paramid-' .. trackIndex .. '-i' .. instrIndex
+    --print('matching instr parameterIdPrefix', parameterIdPrefix)
+
+    self:addDeviceObj(devicesObj, instr.plugin_properties.plugin_device, deviceSavePath, parameterIdPrefix,
+      'instrument', trackId)
+  end
+
+  -- e.g. a plugin that could not be loaded, as Redux this would only be an empty instrument
+  if (instr and instr.plugin_properties.plugin_device == nil and #instr.samples == 0) then
+    print('warning: track ' .. trackIndex .. ' has no sound source, since the instrument has no samples ' ..
+      'and no loaded plugin:', instr.name)
+    return
+  end
+
+  -- native instr to redux
+  if (config['convertToRedux'] == true and instr and instr.plugin_properties.plugin_device == nil) then
+    local deviceSavePath = 'instr-tr' ..
+        trackIndex .. '-no' .. instrIndex .. '-' .. Helpers:prepareFilenameForXML(instr.name) .. '-reduxed'
+    -- convert Renoise instruments to Redux VST3
+    ReduxPluginHelpers:generateReduxPresetDataForInstrument(instr, TempDir .. "/plugins/" .. deviceSavePath)
+
+    devicesObj[#devicesObj + 1] = {
+      Vst3Plugin = {
+        _attr = {
+          id = 'plugin' .. trackId .. '-' .. #devicesObj,
+          deviceID = ReduxVST3Identifier,
+          deviceRole = 'instrument',
+          deviceName = 'Redux',
+          name = Helpers:prepareFilenameForXML(instr.name),
+          loaded = "true"
+        },
+        Enabled = {
+          _attr = {
+            id = 'enabled' .. trackId .. '-' .. #devicesObj,
+            value = 'true'
+          }
+        },
+        State = {
+          _attr = {
+            path = "plugins/" .. deviceSavePath .. ".vstpreset",
+            external = "false"
+          }
+        },
+      }
+    }
+  end
 end
 
 function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterIdPrefix, deviceRole, trackIndex)
@@ -636,7 +804,14 @@ function DawProject:addDeviceObj(devicesObj, device, deviceSavePath, parameterId
           attr.deviceID = pluginInfo['id'] or attr.deviceID
           attr.deviceName = pluginInfo['name'] or attr.deviceName
           attr.deviceVendor = pluginInfo['vendor']
-          local presetName = device:preset(device.active_preset)
+          -- The stored preset index can be out of range, e.g. if a plugin has less presets than before.
+          -- The name is only metadata of the preset file, the actual state is the parameter chunk.
+          local hasPresetName, presetName = pcall(function()
+            return device:preset(device.active_preset)
+          end)
+          if (not hasPresetName) then
+            presetName = ''
+          end
           binParameterChunkData = DeviceHelpers:convertBinaryToVst2Preset(pluginInfo, presetName, binParameterChunkData)
         else
           -- for now skip vst2 plugins with wrong id
@@ -749,7 +924,8 @@ function DawProject:export()
     return
   end
 
-  progressDialog:start('Export', function()
+  local fileName = filePath:match('([^/\\]+)$') or filePath
+  progressDialog:start("Exporting '" .. fileName .. "'", function()
     if (process and process:running()) then
       process:stop()
     end
@@ -766,9 +942,13 @@ function DawProject:export()
         coroutine.yield()
       end
 
-      progressDialog:setPhase('Reading notes and automation', 0, 0.35)
+      progressDialog:setPhase('Reading instruments of the tracks', 0, 0.1)
       yieldCallback()
       noteAbstraction = NoteAbstraction()
+      DawProject.instrumentPools = noteAbstraction:collectInstrumentPools(yieldCallback)
+
+      progressDialog:setPhase('Reading notes and automation', 0.1, 0.35)
+      yieldCallback()
       local songEvents = noteAbstraction:generateSongEvents(yieldCallback)
 
       local automationEvents = DawProject:generateAutomationEventsDataForXML(songEvents)
@@ -902,7 +1082,7 @@ function DawProject:__init()
           process:stop()
         end
         self:clearTempDirectory()
-        progressDialog:start('Convert to Redux', function()
+        progressDialog:start('Converting to Redux', function()
           if (process and process:running()) then
             process:stop()
           end

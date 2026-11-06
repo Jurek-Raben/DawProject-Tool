@@ -8,6 +8,7 @@ Please also read my suggestions for the Renoise API below, the tool requires bin
 
 - Auto converts Renoise sample instruments into Redux instances, to make it loadable in the target DAW
 - Note data and song structure
+- Tracks with multiple instruments are exported as group with one track per instrument, the mixer settings and effects stay on the group
 - Plugin automation data
 - Section naming
 - Track coloring and naming
@@ -50,7 +51,6 @@ Some exports of presets might take a long time, so long that the maximum executi
 
 A song has to fulfill the following requirements for a working export:
 
-- Only one instrument per track! Use [Fladd's track splitter tool](https://www.renoise.com/tools/split-into-separate-tracks)!
 - The Instr. Automation Device has to be placed onto the track where the target instrument is playing.
 - Don't use pre-mixer gain and panning, if you did, replace it with MUtility VST3 or TrackControl VST3
 - Don't use the gainer device, if you did, replace it with MUtility VST3 or TrackControl VST3

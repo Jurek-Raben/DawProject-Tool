@@ -5,3 +5,4 @@ config.json
 .vscode
 ffx.tools.DawProject.xrnx
 bin/configurations.props
+bin/proto*
