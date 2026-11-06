@@ -34,13 +34,16 @@ local RELEASE_OFFSET_MS = 100
 local MID_RELEASE_MS = 600
 local MAX_RELEASE_MS = 5100
 
+-- The order of the styles: Clean, Classic, Optical, Vocal
+local STYLE_CLASSIC = 1
+
 local NUM_SIDE_FILTERS = 8
 local DEFAULT_Q = 0.707
 local DEFAULT_FILTER_FREQUENCY = 1000
 
--- Style Clean, compression direction Compress, with the plugin defaults for the other values
+-- Compression direction Compress, with the plugin defaults for the other values
 local GENERAL_PARAMETERS = {
-  clipper_drive = 0, comp_delta = 0, comp_direction = 0, comp_on = 1, comp_style = 0, curve = 50,
+  clipper_drive = 0, comp_delta = 0, comp_direction = 0, comp_on = 1, comp_style = STYLE_CLASSIC, curve = 50,
   external_side = 0, floor = -140, hold = 0, lookahead = 0, oversample = 0, pump = 0, range = 80, range_inf = 0,
   rms_length = 32, rms_mix = 50, rms_on = 0, rms_speed = 1, ['side gain'] = 0, side_eq_bypass = 0, side_out = 0,
   side_stereo_link = 0, side_stereo_mode = 0, side_stereo_swap = 0, side_stereo_wet1 = 100, side_stereo_wet2 = 100,

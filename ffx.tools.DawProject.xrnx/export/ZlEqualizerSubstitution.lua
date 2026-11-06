@@ -35,7 +35,7 @@ local MAX_Q = 25
 local DEFAULT_FREQUENCY = 1000
 
 -- The Q curves are calibrated for MEqualizer. Compared by ear, this plugin needs a lower Q.
-local Q_CALIBRATION = 0.81
+local Q_CALIBRATION = 0.936
 
 -- Parameters which all bands have in common
 local COMMON_BAND_PARAMETERS = {
