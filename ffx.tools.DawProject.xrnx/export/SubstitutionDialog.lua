@@ -1,7 +1,7 @@
 -------------------------------------------------------------------------------
 -- Substitution Dialog, the phase after the health check. Here you decide which
 -- parts of Renoise are exported as plugin. An option is disabled, as long as its
--- plugin is not installed.
+-- plugin is not installed. Below are the options for DAWs with special needs, like Cubase.
 -- by Jurek Raben
 --
 -- Licensed under CC Attribution-NonCommercial-ShareAlike 4.0 International
@@ -48,31 +48,38 @@ function SubstitutionDialog:__init()
   self.dialog = nil
 end
 
+-- vst2PluginCount is the number of VST2 plugins in the song, for the VST3 migration.
 -- onOptionChanged gets the config key and the new value, onContinue starts the export
-function SubstitutionDialog:start(options, config, onOptionChanged, onContinue)
+function SubstitutionDialog:start(options, vst2PluginCount, config, onOptionChanged, onContinue)
   self:close()
 
   local vb = renoise.ViewBuilder()
-  local tableView = vb:column {
-    style = 'group',
-    margin = 6,
-    spacing = 4,
-    self:createHeaderRow(vb),
-  }
-
-  for _, option in ipairs(options) do
-    tableView:add_child(self:createOptionView(vb, option, config, onOptionChanged))
-  end
-
   local contentView = vb:column {
     margin = 8,
     spacing = 8,
-    vb:text {
+  }
+
+  if (#options > 0) then
+    local tableView = vb:column {
+      style = 'group',
+      margin = 6,
+      spacing = 4,
+      self:createHeaderRow(vb),
+    }
+    for _, option in ipairs(options) do
+      tableView:add_child(self:createOptionView(vb, option, config, onOptionChanged))
+    end
+
+    contentView:add_child(vb:text {
       width = TABLE_WIDTH,
       text = 'A DAW can\'t load Renoise devices. Which parts should be exported as plugin?',
-    },
-    tableView,
-    vb:horizontal_aligner {
+    })
+    contentView:add_child(tableView)
+  end
+
+  contentView:add_child(self:createCompatibilityView(vb, vst2PluginCount, config, onOptionChanged))
+
+  contentView:add_child(vb:horizontal_aligner {
       mode = 'right',
       vb:button {
         text = 'Continue',
@@ -84,10 +91,95 @@ function SubstitutionDialog:start(options, config, onOptionChanged, onContinue)
           onContinue()
         end,
       },
+    })
+
+  self.dialog = renoise.app():show_custom_dialog(DIALOG_TITLE, contentView)
+end
+
+-- Options for DAWs with special needs, below the substitutions
+function SubstitutionDialog:createCompatibilityView(vb, vst2PluginCount, config, onOptionChanged)
+  local compatibilityView = vb:column {
+    style = 'group',
+    margin = 6,
+    spacing = 4,
+    vb:row {
+      margin = OPTION_MARGIN,
+      vb:space { width = CHECKBOX_COLUMN_WIDTH },
+      self:createCell(vb, DEVICE_COLUMN_WIDTH, 'DAW compatibility', HEADER_COLOR, 'bold'),
+      self:createCell(vb, COUNT_COLUMN_WIDTH, 'Count', HEADER_COLOR, 'bold'),
+      self:createCell(vb, PLUGIN_COLUMN_WIDTH, 'Export as', HEADER_COLOR, 'bold'),
     },
   }
 
-  self.dialog = renoise.app():show_custom_dialog(DIALOG_TITLE, contentView)
+  if (vst2PluginCount > 0) then
+    self:addMigrationRows(vb, compatibilityView, vst2PluginCount, config, onOptionChanged)
+  end
+  self:addCubaseRows(vb, compatibilityView, config, onOptionChanged)
+
+  return compatibilityView
+end
+
+function SubstitutionDialog:createCompatibilityOptionRow(vb, configKey, title, count, target, isAvailable, config,
+                                                        onOptionChanged)
+  local textColor = isAvailable and DEVICE_COLOR or DISABLED_COLOR
+  return vb:row {
+    margin = OPTION_MARGIN,
+    vb:checkbox {
+      width = CHECKBOX_SIZE,
+      height = CHECKBOX_SIZE,
+      value = isAvailable and config[configKey] == true,
+      active = isAvailable,
+      notifier = function(isEnabled) onOptionChanged(configKey, isEnabled) end,
+    },
+    vb:space { width = CHECKBOX_COLUMN_WIDTH - CHECKBOX_SIZE },
+    self:createCell(vb, DEVICE_COLUMN_WIDTH, title, textColor),
+    self:createCell(vb, COUNT_COLUMN_WIDTH, count, textColor),
+    self:createCell(vb, PLUGIN_COLUMN_WIDTH, target, isAvailable and PLUGIN_COLOR or DISABLED_COLOR),
+  }
+end
+
+-- An explanation below an option, the lines are given since a text view doesn't wrap
+function SubstitutionDialog:createHintRow(vb, lines, color)
+  return vb:row {
+    vb:space { width = CHECKBOX_COLUMN_WIDTH },
+    vb:text {
+      width = TABLE_WIDTH - CHECKBOX_COLUMN_WIDTH,
+      text = table.concat(lines, '\n'),
+      style = 'custom',
+      color = color or DISABLED_COLOR,
+    },
+  }
+end
+
+-- The VST2 plugins can be exported as their VST3 version, which needs the VST2 id of the info tool
+function SubstitutionDialog:addMigrationRows(vb, parentView, vst2PluginCount, config, onOptionChanged)
+  local isAvailable = config['useVST2InfoTool'] == true
+  parentView:add_child(self:createCompatibilityOptionRow(vb, 'migrateVST2ToVST3', 'VST3 migration',
+    vst2PluginCount .. 'x VST2', 'Installed VST3 version', isAvailable, config, onOptionChanged))
+  parentView:add_child(self:createHintRow(vb, {
+    'Some DAWs, like Cubase, don\'t load VST2 plugins at all. Many plugins have a VST3 version',
+    'that can replace their VST2 version and takes over its settings. If such a VST3 version is',
+    'installed, the VST2 plugin is exported as this VST3 version. Otherwise it stays VST2.',
+    'The automation of a replaced plugin is skipped, since its VST3 parameters are unknown.',
+  }))
+  if (not isAvailable) then
+    parentView:add_child(self:createHintRow(vb, {
+      'Needs the option "Hacky workaround using a binary tool for plugin id extraction".',
+    }, MISSING_COLOR))
+  end
+end
+
+-- Cubase and the other DAWs expect the channels of the groups at different places
+function SubstitutionDialog:addCubaseRows(vb, parentView, config, onOptionChanged)
+  parentView:add_child(self:createCompatibilityOptionRow(vb, 'exportForCubase', 'Export for Cubase',
+    '', 'Separate group channels', true, config, onOptionChanged))
+  parentView:add_child(self:createHintRow(vb, {
+    'Cubase only routes the tracks of a group into it, if the group is a separate group channel.',
+    'Bitwig and Studio lose the plugins of the groups this way, so only use it for Cubase.',
+    'For Cubase, also use the VST3 migration, if there are VST2 plugins.',
+    'Before the import, set the default stereo panner of Cubase to "Stereo Balance Panner"',
+    '(Preferences > Mix). The combined panner moves only the left side, all tracks sound panned right.',
+  }))
 end
 
 function SubstitutionDialog:createCell(vb, width, text, color, font)

@@ -9,13 +9,30 @@
 
 class "TrackExporter"
 
-function TrackExporter:__init(progress, layout, deviceExporter)
+function TrackExporter:__init(config, progress, layout, deviceExporter)
+  self.config = config
   self.progress = progress
   self.layout = layout
   self.deviceExporter = deviceExporter
 end
 
-function TrackExporter:addTrackToStructure(track, targetObj)
+-- Every channel names the channel it is routed to. The channel of a group is a submix channel,
+-- but the DAWs expect it at different places:
+--  - Cubase only routes into a group, if its channel is directly in the structure, outside of the
+--    folder track of the group.
+--  - Bitwig and Studio only keep the plugins of a group, if its channel is inside of the folder
+--    track. It has to be the first child, before the tracks of the group.
+function TrackExporter:addGroupChannel(groupObj)
+  if (self.config['exportForCubase'] == true) then
+    table.insert(self.structureChannels, groupObj.Channel)
+    groupObj.Channel = nil
+  else
+    groupObj._order = { 'Channel' }
+  end
+end
+
+-- destinationChannelId is the channel the track is routed to, nil for the master
+function TrackExporter:addTrackToStructure(track, targetObj, destinationChannelId)
   self.progress:advancePhase(#Song.tracks)
   self.progress:setStatus('Exporting track ' .. track.name)
 
@@ -78,24 +95,33 @@ function TrackExporter:addTrackToStructure(track, targetObj)
     _trackObj.Channel.Devices = devices
   end
 
+  local isGroup = false
   if (self.layout:isTrackSplit(trackIndex)) then
+    isGroup = true
     _trackObj._attr['contentType'] = 'tracks'
-    _trackObj.Channel._attr['role'] = 'master'
+    _trackObj.Channel._attr['role'] = 'submix'
     for _, instrumentNum in ipairs(self.layout.instrumentPools[trackIndex].instruments) do
-      self:addInstrumentTrackToStructure(track, trackIndex, instrumentNum, _trackObj)
+      self:addInstrumentTrackToStructure(track, trackIndex, instrumentNum, _trackObj, _trackObj.Channel._attr.id)
     end
   elseif (track.type == renoise.Track.TRACK_TYPE_SEQUENCER) then
     _trackObj._attr['contentType'] = 'notes'
     _trackObj.Channel._attr['role'] = 'regular'
   elseif (track.type == renoise.Track.TRACK_TYPE_GROUP) then
+    isGroup = true
     _trackObj._attr['contentType'] = 'tracks'
-    _trackObj.Channel._attr['role'] = 'master'
+    _trackObj.Channel._attr['role'] = 'submix'
   elseif (track.type == renoise.Track.TRACK_TYPE_SEND) then
     _trackObj._attr['contentType'] = 'audio'
     _trackObj.Channel._attr['role'] = 'effect'
   elseif (track.type == renoise.Track.TRACK_TYPE_MASTER) then
     _trackObj._attr['contentType'] = 'audio notes'
     _trackObj.Channel._attr['role'] = 'master'
+  end
+
+  _trackObj.Channel._attr['destination'] = destinationChannelId
+
+  if (isGroup) then
+    self:addGroupChannel(_trackObj)
   end
 
   if (targetObj.Track == nil) then
@@ -107,7 +133,7 @@ function TrackExporter:addTrackToStructure(track, targetObj)
 end
 
 -- One instrument of a split track. The mixer settings and effects stay on the group.
-function TrackExporter:addInstrumentTrackToStructure(track, trackIndex, instrumentNum, groupObj)
+function TrackExporter:addInstrumentTrackToStructure(track, trackIndex, instrumentNum, groupObj, groupChannelId)
   local instrument = Song:instrument(instrumentNum)
   local trackId = trackIndex .. '-i' .. instrumentNum
   local trackName = Helpers:prepareNameForXML(track.name) .. ' ' .. Helpers:prepareNameForXML(instrument.name)
@@ -126,6 +152,7 @@ function TrackExporter:addInstrumentTrackToStructure(track, trackIndex, instrume
         audioChannels = '2',
         role = 'regular',
         solo = 'false',
+        destination = groupChannelId,
       },
       Mute = {
         _attr = {
@@ -166,13 +193,13 @@ function TrackExporter:addInstrumentTrackToStructure(track, trackIndex, instrume
   groupObj.Track[#groupObj.Track + 1] = { instrumentTrackObj }
 end
 
-function TrackExporter:getParentTracksRecursively(parentTrackName, trackObjs)
+function TrackExporter:getParentTracksRecursively(parentTrackName, trackObjs, destinationChannelId)
   for _objectIndex = 1, Song.sequencer_track_count do
     local _track = Song:track(_objectIndex)
     if (_track.output_routing == parentTrackName) then
-      local childObj = self:addTrackToStructure(_track, trackObjs);
+      local childObj = self:addTrackToStructure(_track, trackObjs, destinationChannelId);
       if (_track.type == renoise.Track.TRACK_TYPE_GROUP) then
-        self:getParentTracksRecursively(_track.name, childObj)
+        self:getParentTracksRecursively(_track.name, childObj, 'channel' .. _objectIndex)
       end
     end
   end
@@ -183,15 +210,25 @@ end
 function TrackExporter:generateParentTracksStructureDataForXML(trackName)
   self.progress:setPhase('Exporting tracks', 0.55, 0.85)
 
+  self.structureChannels = {}
+  local masterIndex = Song.sequencer_track_count + 1
+  local masterChannelId = 'channel' .. masterIndex
+
   -- add tracks and groups
-  local trackObjs = self:getParentTracksRecursively(trackName, {})
+  local trackObjs = self:getParentTracksRecursively(trackName, {}, masterChannelId)
   -- add sends
   for _objectIndex = Song.sequencer_track_count + 2, #Song.tracks do
     local _track = Song:track(_objectIndex)
-    self:addTrackToStructure(_track, trackObjs)
+    self:addTrackToStructure(_track, trackObjs, masterChannelId)
   end
   -- add master
-  self:addTrackToStructure(Song:track(Song.sequencer_track_count + 1), trackObjs)
+  self:addTrackToStructure(Song:track(masterIndex), trackObjs, nil)
+
+  -- the channels of the groups follow the tracks, like in the projects of Cubase
+  if (#self.structureChannels > 0) then
+    trackObjs.Channel = self.structureChannels
+    trackObjs._order = { 'Track', 'Channel' }
+  end
   return trackObjs
 end
 
@@ -203,7 +240,8 @@ function TrackExporter:generateSendsForXML(track)
     if (device.device_path == "Audio/Effects/Native/#Send") then
       sendObjects[#sendObjects + 1] = {
         _attr = {
-          destination = 'track' ..
+          -- the destination is the channel of the send track, not the track
+          destination = 'channel' ..
               (device:parameter(3).value + Song.sequencer_track_count + 2),
           type = 'post',
           id = 'send' .. SongHelpers:getTrackIndex(track) .. '-' .. deviceIndex

@@ -243,7 +243,7 @@ end
 
 function xml2lua.isTableEmpty(obj)
   for k, _ in pairs(obj) do
-    if (k ~= '_attr') then
+    if (k ~= '_attr' and k ~= '_order') then
       return false
     end
   end
@@ -251,7 +251,8 @@ function xml2lua.isTableEmpty(obj)
 end
 
 function xml2lua.parseTableToXml(obj, tagName, level)
-  if (tagName ~= '_attr') then
+  -- _order is an optional list of child tags, which are written first and in this order
+  if (tagName ~= '_attr' and tagName ~= '_order') then
     if (type(obj) == 'table') then
       if (xml2lua.isChildArray(obj)) then
         for _, value in pairs(obj) do
@@ -261,8 +262,17 @@ function xml2lua.parseTableToXml(obj, tagName, level)
         xml2lua.addTagValueAttr(tagName, "", obj._attr, level)
       else
         xml2lua.startTag(tagName, obj._attr, level)
+        local isOrdered = {}
+        for _, tag in ipairs(obj._order or {}) do
+          isOrdered[tag] = true
+          if (obj[tag] ~= nil) then
+            xml2lua.parseTableToXml(obj[tag], tag, level + 1)
+          end
+        end
         for tag, value in pairs(obj) do
-          xml2lua.parseTableToXml(value, tag, level + 1)
+          if (not isOrdered[tag]) then
+            xml2lua.parseTableToXml(value, tag, level + 1)
+          end
         end
         xml2lua.endTag(tagName, level)
       end

@@ -39,21 +39,21 @@ function DeviceHelpers:getActivePresetDataContent(device, nodeName)
   return nil
 end
 
-function DeviceHelpers:convertBinaryToVst2Preset(pluginInfo, presetName, data)
-  local lenData = string.len(data)
-  presetName = string.sub(presetName, 1, 27)
-  return table.concat({
-    'CcnK',                                                              -- VST2 root chunk identifier
-    Helpers:intToBinaryBE(lenData + 52, 4),                              -- size of this chunk, excl. magic + byteSize, 4 bytes, +52
-    'FPCh',                                                              -- 'FxCk' (regular) or 'FPCh' (opaque chunk)
-    Helpers:intToBinaryBE(1, 4),                                         -- format version (currently 1)
-    Helpers:intToBinaryBE(pluginInfo.id, 4),                             -- fx unique ID
-    Helpers:intToBinaryBE(pluginInfo.version, 4),                        -- fx version
-    Helpers:intToBinaryBE(pluginInfo.countParameters, 4),                -- number of parameters
-    presetName .. Helpers:intToBinaryBE(0, 28 - string.len(presetName)), -- program name (null-terminated ASCII string), 28 bytes
-    Helpers:intToBinaryBE(lenData, 4),                                   -- size of program data, 4 bytes
-    data,                                                                -- chunk data
-  }, '')
+-- The parameter chunk of Renoise is the whole state of the plugin, so it is stored as bank (.fxb).
+-- As program (.fxp), hosts like Studio set it as program chunk, which some plugins reject.
+function DeviceHelpers:convertBinaryToVst2Bank(pluginInfo, data)
+  local bankContent = table.concat({
+    'FBCh',                                          -- 'FxBk' (regular) or 'FBCh' (opaque chunk)
+    Helpers:intToBinaryBE(2, 4),                     -- format version, 2 has the current program
+    Helpers:intToBinaryBE(pluginInfo.id, 4),         -- fx unique ID
+    Helpers:intToBinaryBE(pluginInfo.version or 0, 4), -- fx version
+    Helpers:intToBinaryBE(1, 4),                     -- number of programs
+    Helpers:intToBinaryBE(0, 4),                     -- current program
+    string.rep(string.char(0), 124),                 -- reserved, 124 bytes
+    Helpers:intToBinaryBE(string.len(data), 4),      -- size of bank data, 4 bytes
+    data,                                            -- chunk data
+  })
+  return 'CcnK' .. Helpers:intToBinaryBE(string.len(bankContent), 4) .. bankContent -- size excl. magic + byteSize
 end
 
 function DeviceHelpers:convertBinaryToVst3Preset(pluginId, data)

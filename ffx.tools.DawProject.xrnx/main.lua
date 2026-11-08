@@ -22,6 +22,7 @@ require('lib/GeneralHelpers')
 require('lib/SongHelpers')
 require('lib/DeviceHelpers')
 require('lib/ReduxPluginHelpers')
+require('lib/Vst3Migration')
 require('lib/Cache')
 require('lib/ProjectFiles')
 require('lib/MeldaPreset')
@@ -74,15 +75,13 @@ function DawProject:export()
 end
 
 function DawProject:configureSubstitutions()
-  -- nothing to choose for this song on this operating system
+  -- the dialog is always shown, since the target DAW can always be chosen
   local options = PluginSubstitutions:findOptionsUsedInSong()
-  if (#options == 0) then
-    self:startExport()
-    return
-  end
+  local vst2PluginCount = Vst3Migration:countVst2PluginsInSong()
 
   substitutionDialog:start(
     options,
+    vst2PluginCount,
     config,
     function(configKey, value)
       config[configKey] = value

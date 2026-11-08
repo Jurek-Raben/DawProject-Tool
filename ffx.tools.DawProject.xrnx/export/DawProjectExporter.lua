@@ -53,7 +53,7 @@ function DawProjectExporter:export(filePath)
 
   local deviceExporter = DeviceExporter(self.config, self.progress, layout, pluginInfoCache,
     automationEvents.parametersObj, substitutions)
-  local trackExporter = TrackExporter(self.progress, layout, deviceExporter)
+  local trackExporter = TrackExporter(self.config, self.progress, layout, deviceExporter)
   local arrangementExporter = ArrangementExporter(self.config, self.progress, layout, substitutions)
 
   local projectStructure = {

@@ -25,6 +25,8 @@ function DeviceExporter:__init(config, progress, layout, pluginInfoCache, automa
   self.substitutions = substitutions
   self.exportId = os.date('%Y%m%d%H%M%S')
   self.instrIndexCache = Cache()
+  -- plugins can be installed between two exports
+  Vst3Migration.installedClassIds = nil
 end
 
 function DeviceExporter:generateDevicesForXML(track)
@@ -224,6 +226,53 @@ function DeviceExporter:addInstrumentDevicesForXML(devicesObj, instr, instrIndex
   end
 end
 
+-- Exports a VST2 plugin as its installed, compatible VST3 version. Returns false, if there is none.
+function DeviceExporter:addMigratedVst3DeviceObj(devicesObj, device, pluginInfo, chunkData, attr, enabledAttr,
+                                                 deviceSavePath, parameterIdPrefix, deviceRole, trackIndex)
+  local target = Vst3Migration:findInstalledTarget(pluginInfo['id'],
+    { pluginInfo['name'], device.short_name, device.name }, deviceRole)
+  if (target == nil) then
+    return false
+  end
+  local classId = target.classId
+
+  local presetPath = "plugins/" .. deviceSavePath .. ".vstpreset"
+  Helpers:writeFile(TempDir .. "/" .. presetPath, Vst3Migration:createPresetData(target, pluginInfo, chunkData))
+  print('info: VST2 plugin ' .. device.name .. ' at track ' .. SongHelpers:getTrackLabel(trackIndex) ..
+    ' is exported as its VST3 version ' .. classId .. ' (' .. target.scheme.name .. ' scheme)')
+
+  -- The VST3 version has other parameter ids than the indices of the VST2 version
+  local automatedParameters = self.automatedParameters[parameterIdPrefix]
+  if (automatedParameters ~= nil and next(automatedParameters) ~= nil) then
+    print('warning: skipping automation of ' .. device.name .. ' at track ' .. SongHelpers:getTrackLabel(trackIndex) ..
+      ': the parameter ids of its VST3 version are unknown')
+  end
+
+  devicesObj[#devicesObj + 1] = {
+    Vst3Plugin = {
+      _attr = {
+        id = 'plugin' .. trackIndex .. '-' .. (#devicesObj + 1),
+        deviceID = classId,
+        deviceRole = deviceRole,
+        deviceName = pluginInfo['name'] and Helpers:prepareNameForXML(pluginInfo['name']) or attr.deviceName,
+        deviceVendor = pluginInfo['vendor'],
+        name = attr.name,
+        loaded = "true"
+      },
+      Enabled = {
+        _attr = enabledAttr
+      },
+      State = {
+        _attr = {
+          path = presetPath,
+          external = "false"
+        }
+      }
+    }
+  }
+  return true
+end
+
 function DeviceExporter:addDeviceObj(devicesObj, device, deviceSavePath, parameterIdPrefix, deviceRole, trackIndex)
   self.progress:setStatus('Exporting plugin ' .. device.name)
 
@@ -293,26 +342,25 @@ function DeviceExporter:addDeviceObj(devicesObj, device, deviceSavePath, paramet
 
         self.pluginInfoCache:set(device.device_path, pluginInfo)
 
+        if (pluginInfo and self.config['migrateVST2ToVST3'] == true and
+              self:addMigratedVst3DeviceObj(devicesObj, device, pluginInfo, binParameterChunkData, attr, enabledAttr,
+                deviceSavePath, parameterIdPrefix, deviceRole, trackIndex)) then
+          coroutine.yield()
+          return
+        end
+
         if (pluginInfo) then
           attr.deviceID = pluginInfo['id'] or attr.deviceID
           attr.deviceName = pluginInfo['name'] or attr.deviceName
           attr.deviceVendor = pluginInfo['vendor']
-          -- The stored preset index can be out of range, e.g. if a plugin has less presets than before.
-          -- The name is only metadata of the preset file, the actual state is the parameter chunk.
-          local hasPresetName, presetName = pcall(function()
-            return device:preset(device.active_preset)
-          end)
-          if (not hasPresetName) then
-            presetName = ''
-          end
-          binParameterChunkData = DeviceHelpers:convertBinaryToVst2Preset(pluginInfo, presetName, binParameterChunkData)
+          binParameterChunkData = DeviceHelpers:convertBinaryToVst2Bank(pluginInfo, binParameterChunkData)
         else
           -- for now skip vst2 plugins with wrong id
           print('warning: VST2 plugin is missing in the export, since its id is unknown:', device.name)
           attr.deviceID = nil
         end
       end
-      Helpers:writeFile(TempDir .. "/plugins/" .. deviceSavePath .. ".fxp", binParameterChunkData)
+      Helpers:writeFile(TempDir .. "/plugins/" .. deviceSavePath .. ".fxb", binParameterChunkData)
       if (attr.deviceID ~= nil) then
         devicesObj[#devicesObj + 1] = {
           Vst2Plugin = {
@@ -322,7 +370,7 @@ function DeviceExporter:addDeviceObj(devicesObj, device, deviceSavePath, paramet
             },
             State = {
               _attr = {
-                path = "plugins/" .. deviceSavePath .. ".fxp",
+                path = "plugins/" .. deviceSavePath .. ".fxb",
                 external = "false"
               }
             },

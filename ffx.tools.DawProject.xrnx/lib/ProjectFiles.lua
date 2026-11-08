@@ -25,7 +25,7 @@ ProjectFiles = {}
 function ProjectFiles:clearTempDirectory()
   local presetFiles = {}
   pcall(function()
-    presetFiles = os.filenames(TempDir .. '/plugins', { '*.aupreset', '*.vstpreset', '*.fxp', '*.xrni' })
+    presetFiles = os.filenames(TempDir .. '/plugins', { '*.aupreset', '*.vstpreset', '*.fxp', '*.fxb', '*.xrni' })
   end)
   for i in pairs(presetFiles) do
     os.remove(TempDir .. '/plugins/' .. presetFiles[i])
