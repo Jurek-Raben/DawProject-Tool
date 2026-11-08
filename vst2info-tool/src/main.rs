@@ -40,7 +40,7 @@ fn main() {
             plugin_binary::locate_plugin_binary,
         ),
         // only a newer plugin knows the older plugins it replaces
-        Command::MigrationInfo { .. } => {
+        Command::MigrationInfo { .. } | Command::RemapParameters { .. } => {
             output::exit_with_error("The migration info is only available for VST3 plugins")
         }
         Command::ReadPlugin {

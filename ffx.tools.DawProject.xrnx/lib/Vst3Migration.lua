@@ -111,9 +111,13 @@ local function findSteinbergClassId(vst2Id, pluginNames, installedClassIds)
   return nil
 end
 
-local function findMeldaClassId(vst2Id, _, installedClassIds)
+-- The replaced VST2 plugin is named by its class id in the Steinberg scheme
+local function findMeldaClassId(vst2Id, pluginNames, installedClassIds)
   local classId = Vst3Migration:createMeldaClassId(vst2Id)
-  return installedClassIds[classId] and classId or nil
+  if (not installedClassIds[classId]) then
+    return nil
+  end
+  return classId, Vst3Migration:createSteinbergClassId(vst2Id, tostring(pluginNames[1] or ''))
 end
 
 -- The declared compatibilities of the plugin migration data, by the prefix 'VST' + VST2 id of the old
@@ -163,7 +167,7 @@ local function findDeclaredClassId(vst2Id, pluginNames, installedClassIds)
   end
   table.sort(classIds)
   if (candidateCount <= 1) then
-    return classIds[1]
+    return classIds[1], classIds[1] and candidates[classIds[1]][1]
   end
 
   -- e.g. a VST3 shell with several versions, the old class id contains the name of the VST2 plugin
@@ -173,7 +177,7 @@ local function findDeclaredClassId(vst2Id, pluginNames, installedClassIds)
       for _, classId in ipairs(classIds) do
         for _, candidateOldClassId in ipairs(candidates[classId]) do
           if (candidateOldClassId == oldClassId) then
-            return classId
+            return classId, oldClassId
           end
         end
       end
@@ -238,7 +242,8 @@ function Vst3Migration:getInstalledClassIds(deviceRole)
   return classIds
 end
 
--- Returns the installed compatible VST3 plugin as { classId, scheme }, or nil.
+-- Returns the installed compatible VST3 plugin as { classId, replacedClassId, scheme }, or nil.
+-- The replaced class id names the VST2 plugin for the VST3 plugin, in the Steinberg scheme it is the same.
 -- The names only decide, if several VST3 plugins match the VST2 id.
 function Vst3Migration:findInstalledTarget(vst2Id, pluginNames, deviceRole)
   if (type(vst2Id) ~= 'number') then
@@ -246,12 +251,132 @@ function Vst3Migration:findInstalledTarget(vst2Id, pluginNames, deviceRole)
   end
   local installedClassIds = self:getInstalledClassIds(deviceRole)
   for _, scheme in ipairs(SCHEMES) do
-    local classId = scheme.findClassId(vst2Id, pluginNames, installedClassIds)
+    local classId, replacedClassId = scheme.findClassId(vst2Id, pluginNames, installedClassIds)
     if (classId ~= nil) then
-      return { classId = classId, scheme = scheme }
+      return { classId = classId, replacedClassId = replacedClassId or classId, scheme = scheme }
     end
   end
   return nil
+end
+
+-- Runs the VST3 helper tool, returns its result or nil and the reason
+local function runVst3Tool(argumentsString)
+  local toolName, unavailableReason = DeviceHelpers:getInfoToolName('vst3', false)
+  if (toolName == nil or not io.exists('./bin/' .. toolName)) then
+    return nil, 'the vst info tool ' .. (unavailableReason or 'does not exist')
+  end
+  local result, problem = DeviceHelpers:decodeInfoToolOutput(DeviceHelpers:executeInfoTool(toolName, argumentsString))
+  if (result == nil) then
+    return nil, problem
+  end
+  if (result.error ~= nil) then
+    return nil, tostring(result.error)
+  end
+  return result
+end
+
+-- The VST3 plugin itself tells the ids, through IRemapParamID. Returns nil, if it doesn't.
+local function remapByPlugin(filePath, target, oldParameters)
+  local arguments = { '--remap-parameters', DeviceHelpers:quotePathForConsole(filePath), target.classId,
+    target.replacedClassId }
+  for _, parameter in ipairs(oldParameters) do
+    table.insert(arguments, string.format('%d', parameter.id))
+  end
+  local result = runVst3Tool(table.concat(arguments, ' '))
+  if (result == nil or result.supported ~= true) then
+    return nil
+  end
+
+  local newParameterIds = {}
+  for _, parameter in ipairs(result.parameters or {}) do
+    newParameterIds[parameter.old] = parameter.new
+  end
+  return newParameterIds
+end
+
+local function normalizeParameterName(name)
+  return (string.lower(tostring(name or '')):gsub('%s+', ' '):gsub('^ ', ''):gsub(' $', ''))
+end
+
+-- VST2 names are often shortened, so the beginning of the longer name is enough
+local MIN_SHORTENED_NAME_LENGTH = 4
+
+local function areSimilarNames(vst2Name, vst3Name)
+  if (vst2Name == '' or vst3Name == '') then
+    return false
+  end
+  if (vst2Name == vst3Name) then
+    return true
+  end
+  local shortName, longName = vst2Name, vst3Name
+  if (#shortName > #longName) then
+    shortName, longName = longName, shortName
+  end
+  return #shortName >= MIN_SHORTENED_NAME_LENGTH and string.sub(longName, 1, #shortName) == shortName
+end
+
+-- Many VST3 versions use the VST2 index as parameter id, and keep the names of the parameters:
+--  1. the parameter with the old index as id is used, if its name is similar
+--  2. otherwise the only parameter with the same name is used
+local function remapByNames(filePath, target, oldParameters, newParameterIds)
+  local plugin, problem = runVst3Tool(DeviceHelpers:quotePathForConsole(filePath) .. ' --class-id ' .. target.classId)
+  if (plugin == nil) then
+    return problem
+  end
+
+  local namesById = {}
+  local idsByName = {}
+  for _, parameter in ipairs(plugin.parameters or {}) do
+    local name = normalizeParameterName(parameter.title)
+    namesById[parameter.id] = name
+    -- a name of several parameters can't be assigned
+    idsByName[name] = (idsByName[name] == nil) and parameter.id or false
+  end
+
+  for _, oldParameter in ipairs(oldParameters) do
+    if (newParameterIds[oldParameter.id] == nil) then
+      local oldName = normalizeParameterName(oldParameter.name)
+      if (namesById[oldParameter.id] ~= nil and areSimilarNames(oldName, namesById[oldParameter.id])) then
+        newParameterIds[oldParameter.id] = oldParameter.id
+      elseif (idsByName[oldName]) then
+        newParameterIds[oldParameter.id] = idsByName[oldName]
+      end
+    end
+  end
+  return nil
+end
+
+-- Finds the parameter ids of the VST3 plugin, which replace the parameter indices of the VST2 plugin.
+-- oldParameters is a list of { id, name }. Returns a table of the new ids by the old indices, the
+-- method, or nil and the reason.
+function Vst3Migration:remapParameters(target, deviceRole, oldParameters)
+  local pathPrefix = (deviceRole == 'instrument') and VST3_INSTRUMENT_PATH_PREFIX or VST3_EFFECT_PATH_PREFIX
+  local filePath = DeviceHelpers:findPluginFilePath(pathPrefix .. target.classId)
+  if (filePath == nil) then
+    return nil, 'the file of the VST3 version is unknown'
+  end
+
+  local newParameterIds = remapByPlugin(filePath, target, oldParameters)
+  local method = 'told by the plugin'
+  if (newParameterIds == nil) then
+    newParameterIds = {}
+    method = 'by index and name'
+  end
+
+  -- the plugin might not know all the parameters
+  local unmappedCount = 0
+  for _, oldParameter in ipairs(oldParameters) do
+    if (newParameterIds[oldParameter.id] == nil) then
+      unmappedCount = unmappedCount + 1
+    end
+  end
+  if (unmappedCount > 0) then
+    local problem = remapByNames(filePath, target, oldParameters, newParameterIds)
+    if (problem ~= nil and next(newParameterIds) == nil) then
+      return nil, problem
+    end
+  end
+  return newParameterIds, method
 end
 
 local function isVst2DevicePath(devicePath)

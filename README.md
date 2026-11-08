@@ -33,7 +33,7 @@ The master track always gets a limiter as last device, with a threshold of -0.2 
 - VST2 preset export (included VST2 helper tool provides missing plugin id)
 - VST2 automation (included VST2 helper tool provides missing plugin id)
 - VST3 automation mapping (included VST3 helper tool provides parameter ids)
-- VST3 migration (included VST3 helper tool reads which VST2 plugins a VST3 plugin replaces)
+- VST3 migration (included VST3 helper tool reads which VST2 plugins a VST3 plugin replaces, and which parameters replace the VST2 ones)
 - AU preset export (plist util converts preset file)
 - AU automation mapping (auval provides missing parameter ids)
 
@@ -41,7 +41,6 @@ The master track always gets a limiter as last device, with a threshold of -0.2 
 
 - Master track automation conversion
 - Redux macro device to instrument device automation conversion
-- Automation of VST2 plugins that are exported as their VST3 version, the parameter ids of the VST3 version are unknown
 - Studio One will incorrectly set/interpret the parameter ids for AudioUnits. Therefore automation for AudioUnits currently is lost in Studio One.
 
 ## Support my work
@@ -136,6 +135,13 @@ The VST3 tool also reads which older plugins a VST3 plugin can replace, see [VST
 ./vst3info-tool-mac-arm --migration-info "/Library/Audio/Plug-Ins/VST3/MyPlugin.vst3"
 ```
 
+For the automation, it asks the plugin which of its parameters replace the ones of the replaced plugin, by the class id of the VST3 plugin, the class id of the replaced plugin and the old parameter ids. A module with several plugins is read for a single class with `--class-id`.
+
+```bash
+./vst3info-tool-mac-arm --remap-parameters "/Library/Audio/Plug-Ins/VST3/MyPlugin.vst3" <class id> <replaced class id> 0 1 2
+./vst3info-tool-mac-arm "/Library/Audio/Plug-Ins/VST3/MyPlugin.vst3" --class-id <class id>
+```
+
 ## Reporting problems
 
 If an export fails or sounds wrong, please report it in the [Renoise forum](https://forum.renoise.com/). The most helpful thing is the complete list of warnings and errors:
@@ -190,7 +196,7 @@ Some DAWs need a special export. The options are in the substitution dialog, bel
 
 #### VST3 migration
 
-Some DAWs, like Cubase, don't load VST2 plugins at all. Many plugins have a VST3 version which can replace the VST2 version and takes over its settings. With this option, a VST2 plugin is exported as its VST3 version, if such a version is installed. Otherwise it stays VST2. The option is only listed if the song contains VST2 plugins, and it needs the VST2 helper tool for the id of the plugin. The automation of a replaced plugin is skipped, since the parameter ids of its VST3 version are unknown.
+Some DAWs, like Cubase, don't load VST2 plugins at all. Many plugins have a VST3 version which can replace the VST2 version and takes over its settings. With this option, a VST2 plugin is exported as its VST3 version, if such a version is installed. Otherwise it stays VST2. The option is only listed if the song contains VST2 plugins, and it needs the VST2 helper tool for the id of the plugin.
 
 Most VST3 plugins declare which VST2 plugins they replace. These declarations are collected as plugin migration data:
 
@@ -200,6 +206,14 @@ Most VST3 plugins declare which VST2 plugins they replace. These declarations ar
 - The data is saved in the preferences directory of Renoise, e.g. `~/Library/Preferences/Renoise/V3.5.4/DawProjectPluginMigration.json`, so it survives updates of the tool.
 
 Without a declaration, two derived class ids are tried: the Steinberg scheme (`VST` + VST2 id + name), which JUCE plugins use, and the one of MeldaProduction. The log tells which plugins were replaced, e.g. `is exported as its VST3 version ... (plugin compatibility scheme)`.
+
+The VST3 version has other parameter ids than the indices of the VST2 version, so the automation of a replaced plugin is mapped, in this order:
+
+1. The VST3 plugin tells the ids itself, through `IRemapParamID` of VST3 SDK 3.7.11. Only few plugins support it so far.
+2. The VST3 parameter with the VST2 index as id is used, if its name is similar. Many VST3 versions keep the indices, e.g. the ones of u-he, MeldaProduction and Arturia. VST2 names are often shortened, so the beginning of the names is compared.
+3. The only VST3 parameter with the same name is used, e.g. for JUCE plugins with other ids.
+
+The automation of the parameters without a match is skipped with a warning. The log tells how the parameters were mapped, e.g. `are mapped to its VST3 version, by index and name`.
 
 #### Export for Cubase
 

@@ -2,6 +2,7 @@
 
 use crate::host_application;
 use crate::memory_stream::MemoryStream;
+use crate::migration_info::class_id_to_string;
 use crate::message_pump;
 use crate::preset_file::PresetStates;
 use crate::vst3_strings::{string_from_utf8_buffer, string_from_utf16_buffer};
@@ -60,14 +61,16 @@ struct AudioComponent {
     component: ComPtr<IComponent>,
 }
 
+/// Without a class id, the first class of the module that can be created is inspected
 pub fn inspect_plugin(
     factory: &ComPtr<IPluginFactory>,
     displayed_values: DisplayedValues,
     preset_states: Option<PresetStates>,
+    class_id: Option<&str>,
 ) -> Result<PluginInfos, String> {
     unsafe {
         let vendor = read_factory_vendor(factory)?;
-        let AudioComponent { name, component } = create_audio_component(factory)?;
+        let AudioComponent { name, component } = create_audio_component(factory, class_id)?;
 
         let host = host_application::create_host_application();
         let initialize_result = component.initialize(host);
@@ -162,9 +165,10 @@ unsafe fn read_factory_vendor(factory: &ComPtr<IPluginFactory>) -> Result<String
     }
 }
 
-/// A module can contain multiple classes, the first one that can be created is used.
+/// A module can contain multiple classes, the first one that can be created is used, or the given one.
 unsafe fn create_audio_component(
     factory: &ComPtr<IPluginFactory>,
+    class_id: Option<&str>,
 ) -> Result<AudioComponent, String> {
     unsafe {
         let mut has_audio_class = false;
@@ -173,6 +177,7 @@ unsafe fn create_audio_component(
             let mut class_info: PClassInfo = zeroed();
             if factory.getClassInfo(class_index, &mut class_info) != kResultOk
                 || !string_from_utf8_buffer(&class_info.category).contains(AUDIO_MODULE_CATEGORY)
+                || class_id.is_some_and(|id| !class_id_to_string(&class_info.cid).eq_ignore_ascii_case(id))
             {
                 continue;
             }
@@ -204,7 +209,7 @@ unsafe fn create_audio_component(
 }
 
 /// The controller is either the component itself, or a separate class of the module.
-unsafe fn open_controller(
+pub(crate) unsafe fn open_controller(
     component: &ComPtr<IComponent>,
     factory: &ComPtr<IPluginFactory>,
     host: *mut FUnknown,
@@ -243,7 +248,7 @@ unsafe fn count_buses(component: &ComPtr<IComponent>, direction: i32) -> i32 {
 
 /// Parameters of the component and the controller are synchronized over the connection. Plugins
 /// that don't support it still report their parameters, so a failing connection is ignored.
-unsafe fn connect_component_and_controller(
+pub(crate) unsafe fn connect_component_and_controller(
     component: &ComPtr<IComponent>,
     controller: &ComPtr<IEditController>,
 ) {
@@ -258,7 +263,7 @@ unsafe fn connect_component_and_controller(
     }
 }
 
-unsafe fn disconnect_component_and_controller(
+pub(crate) unsafe fn disconnect_component_and_controller(
     component: &ComPtr<IComponent>,
     controller: &ComPtr<IEditController>,
 ) {

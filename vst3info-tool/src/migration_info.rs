@@ -228,7 +228,7 @@ unsafe fn read_compatibility_class(factory: &ComPtr<IPluginFactory>, class_id: &
 
 /// The string form of a class id, as FUID::toString of the VST3 SDK writes it.
 /// On Windows the class ids are COM compatible, the first three parts are stored little endian there.
-fn class_id_to_string(class_id: &TUID) -> String {
+pub(crate) fn class_id_to_string(class_id: &TUID) -> String {
     let bytes: Vec<u8> = class_id.iter().map(|&byte| byte as u8).collect();
     let ordered: Vec<u8> = if cfg!(windows) {
         [3, 2, 1, 0, 5, 4, 7, 6, 8, 9, 10, 11, 12, 13, 14, 15]

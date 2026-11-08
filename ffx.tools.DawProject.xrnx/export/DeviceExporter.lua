@@ -240,12 +240,8 @@ function DeviceExporter:addMigratedVst3DeviceObj(devicesObj, device, pluginInfo,
   print('info: VST2 plugin ' .. device.name .. ' at track ' .. SongHelpers:getTrackLabel(trackIndex) ..
     ' is exported as its VST3 version ' .. classId .. ' (' .. target.scheme.name .. ' scheme)')
 
-  -- The VST3 version has other parameter ids than the indices of the VST2 version
-  local automatedParameters = self.automatedParameters[parameterIdPrefix]
-  if (automatedParameters ~= nil and next(automatedParameters) ~= nil) then
-    print('warning: skipping automation of ' .. device.name .. ' at track ' .. SongHelpers:getTrackLabel(trackIndex) ..
-      ': the parameter ids of its VST3 version are unknown')
-  end
+  local parametersObj = self:remapMigratedParameters(device, target, deviceRole, trackIndex,
+    self.automatedParameters[parameterIdPrefix])
 
   devicesObj[#devicesObj + 1] = {
     Vst3Plugin = {
@@ -266,10 +262,58 @@ function DeviceExporter:addMigratedVst3DeviceObj(devicesObj, device, pluginInfo,
           path = presetPath,
           external = "false"
         }
-      }
+      },
+      Parameters = parametersObj,
     }
   }
   return true
+end
+
+-- The VST3 version has other parameter ids than the indices of the VST2 version. The VST3 plugin is asked for
+-- them, the automation of the parameters without a new id is skipped. Returns the parameters, or nil.
+function DeviceExporter:remapMigratedParameters(device, target, deviceRole, trackIndex, automatedParameters)
+  if (automatedParameters == nil or next(automatedParameters) == nil) then
+    return nil
+  end
+  local deviceLabel = device.name .. ' at track ' .. SongHelpers:getTrackLabel(trackIndex)
+
+  local oldParameters = {}
+  for _, parameter in pairs(automatedParameters) do
+    table.insert(oldParameters, { id = tonumber(parameter._attr.parameterID), name = parameter._attr.name })
+  end
+  table.sort(oldParameters, function(a, b) return a.id < b.id end)
+
+  self.progress:setStatus('Reading the VST3 parameters of ' .. device.name)
+  local newParameterIds, methodOrProblem = Vst3Migration:remapParameters(target, deviceRole, oldParameters)
+  coroutine.yield()
+  if (newParameterIds == nil) then
+    print('warning: skipping automation of ' .. deviceLabel .. ': ' .. methodOrProblem)
+    return nil
+  end
+
+  local realParameters = {}
+  local skippedNames = {}
+  for _, parameter in pairs(automatedParameters) do
+    local newParameterId = newParameterIds[tonumber(parameter._attr.parameterID)]
+    if (newParameterId ~= nil) then
+      local attributes = {}
+      for key, value in pairs(parameter._attr) do
+        attributes[key] = value
+      end
+      attributes.parameterID = newParameterId
+      table.insert(realParameters, { _attr = attributes })
+    else
+      table.insert(skippedNames, tostring(parameter._attr.name))
+    end
+  end
+
+  if (#skippedNames > 0) then
+    print('warning: skipping automation of ' .. deviceLabel .. ', the VST3 version has no parameter for: ' ..
+      table.concat(skippedNames, ', '))
+  end
+  print('info: ' .. #realParameters .. ' automated parameters of ' .. deviceLabel .. ' are mapped to its VST3 version, ' ..
+    methodOrProblem)
+  return #realParameters > 0 and { RealParameter = realParameters } or nil
 end
 
 function DeviceExporter:addDeviceObj(devicesObj, device, deviceSavePath, parameterIdPrefix, deviceRole, trackIndex)
