@@ -10,6 +10,7 @@ Please also read my suggestions for the Renoise API below, the tool requires bin
 - Note data and song structure
 - Tracks with multiple instruments are exported as group with one track per instrument, the mixer settings and effects stay on the group
 - Hidden note columns are ignored, just like Renoise does not play them
+- Notes in muted note columns are not exported
 - The transpose settings of plugin instruments are applied to the notes
 - Plugin automation data
 - Section naming

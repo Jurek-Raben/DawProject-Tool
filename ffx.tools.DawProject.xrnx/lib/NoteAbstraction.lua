@@ -33,6 +33,7 @@ function NoteAbstraction:__init(substitutions)
   self.automationCache = Cache()
   self.instrumentPools = {}
   self.visibleNoteColumns = {}
+  self.mutedNoteColumns = {}
 end
 
 -- Hidden note columns keep their data, but Renoise doesn't play them
@@ -43,6 +44,22 @@ function NoteAbstraction:isNoteColumnVisible(position)
     self.visibleNoteColumns[position.track] = visibleNoteColumns
   end
   return position.column <= visibleNoteColumns
+end
+
+-- Only valid for visible note columns
+function NoteAbstraction:isNoteColumnMuted(position)
+  local mutedColumns = self.mutedNoteColumns[position.track]
+  if (mutedColumns == nil) then
+    mutedColumns = {}
+    self.mutedNoteColumns[position.track] = mutedColumns
+  end
+
+  local isMuted = mutedColumns[position.column]
+  if (isMuted == nil) then
+    isMuted = Song:track(position.track):column_is_muted(position.column)
+    mutedColumns[position.column] = isMuted
+  end
+  return isMuted
 end
 
 -- Returns the instrument of a note as index of Song.instruments.
@@ -66,7 +83,8 @@ function NoteAbstraction:collectInstrumentPools(yieldCallback)
     local mutedTracks = {}
 
     for position, noteColumn in Song.pattern_iterator:note_columns_in_pattern(Song.sequencer:pattern(seqIndex)) do
-      if (noteColumn.note_value < renoise.PatternLine.NOTE_OFF and self:isNoteColumnVisible(position)) then
+      if (noteColumn.note_value < renoise.PatternLine.NOTE_OFF and self:isNoteColumnVisible(position)
+            and not self:isNoteColumnMuted(position)) then
         local trackNum = position.track
         local noteKey = position.column .. "_" .. trackNum
         local instrumentNum = self:getNoteInstrument(noteColumn, noteKey, lastInstruments)
@@ -277,6 +295,11 @@ function NoteAbstraction:generateSongEvents(yieldCallback)
 
       self:addPatternTrackAutomation(automationEvents, pattern, position, noteColumn, lineOffset, usedTypes)
 
+      -- Only the notes are left out, the automation of the track is attached to the first column
+      if (self:isNoteColumnMuted(position)) then
+        goto continue
+      end
+
       checkForPressureAutomationEvent(noteKey)
 
       if noteColumn.is_empty then
@@ -463,6 +486,9 @@ function NoteAbstraction:warnAboutSkippedAutomation(device, trackNum, deviceInde
     'warning: skipping automation of ' .. device.name .. ' at track ' .. trackNum .. ': ' .. reason)
 end
 
+-- The name of the slots of an automation device without a target, their automation has no effect
+local UNASSIGNED_PARAMETER_NAME = 'No Parameter'
+
 function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum, patternTrack, lineOffset,
                                                      lastPointValues, seqIndex)
   local usedTypes = {}
@@ -523,7 +549,9 @@ function NoteAbstraction:addGraphicalTrackAutomation(automationEvents, trackNum,
               return c - 1
             end
           end
-          print('error: instrument param index not found', targetDevice.name, paramName)
+          if (paramName ~= UNASSIGNED_PARAMETER_NAME) then
+            print('error: instrument param index not found', targetDevice.name, paramName)
+          end
           return nil
         end
       end
