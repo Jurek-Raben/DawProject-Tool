@@ -49,9 +49,11 @@ function SubstitutionDialog:__init()
 end
 
 -- vst2PluginCount is the number of VST2 plugins in the song, for the VST3 migration.
--- onOptionChanged gets the config key and the new value, onContinue starts the export
-function SubstitutionDialog:start(options, vst2PluginCount, config, onOptionChanged, onContinue)
+-- onOptionChanged gets the config key and the new value, onContinue starts the export.
+-- onScanMigrationData starts the scan of the plugin migration data, it gets a function for its end.
+function SubstitutionDialog:start(options, vst2PluginCount, config, onOptionChanged, onContinue, onScanMigrationData)
   self:close()
+  self.onScanMigrationData = onScanMigrationData
 
   local vb = renoise.ViewBuilder()
   local contentView = vb:column {
@@ -119,23 +121,33 @@ function SubstitutionDialog:createCompatibilityView(vb, vst2PluginCount, config,
   return compatibilityView
 end
 
+-- onToggled is called additionally to onOptionChanged, actionView is shown behind the option
 function SubstitutionDialog:createCompatibilityOptionRow(vb, configKey, title, count, target, isAvailable, config,
-                                                        onOptionChanged)
+                                                        onOptionChanged, onToggled, actionView)
   local textColor = isAvailable and DEVICE_COLOR or DISABLED_COLOR
-  return vb:row {
+  local row = vb:row {
     margin = OPTION_MARGIN,
     vb:checkbox {
       width = CHECKBOX_SIZE,
       height = CHECKBOX_SIZE,
       value = isAvailable and config[configKey] == true,
       active = isAvailable,
-      notifier = function(isEnabled) onOptionChanged(configKey, isEnabled) end,
+      notifier = function(isEnabled)
+        onOptionChanged(configKey, isEnabled)
+        if (onToggled ~= nil) then
+          onToggled(isEnabled)
+        end
+      end,
     },
     vb:space { width = CHECKBOX_COLUMN_WIDTH - CHECKBOX_SIZE },
     self:createCell(vb, DEVICE_COLUMN_WIDTH, title, textColor),
     self:createCell(vb, COUNT_COLUMN_WIDTH, count, textColor),
     self:createCell(vb, PLUGIN_COLUMN_WIDTH, target, isAvailable and PLUGIN_COLOR or DISABLED_COLOR),
   }
+  if (actionView ~= nil) then
+    row:add_child(actionView)
+  end
+  return row
 end
 
 -- An explanation below an option, the lines are given since a text view doesn't wrap
@@ -151,16 +163,47 @@ function SubstitutionDialog:createHintRow(vb, lines, color)
   }
 end
 
--- The VST2 plugins can be exported as their VST3 version, which needs the VST2 id of the info tool
+-- The VST2 plugins can be exported as their VST3 version, which needs the VST2 id of the info tool.
+-- The migration data is built when the option is selected for the first time, and can be refreshed.
 function SubstitutionDialog:addMigrationRows(vb, parentView, vst2PluginCount, config, onOptionChanged)
   local isAvailable = config['useVST2InfoTool'] == true
+
+  local refreshButton
+  local onScanFinished = function()
+    if (refreshButton ~= nil and self.dialog ~= nil and self.dialog.visible) then
+      refreshButton.visible = PluginMigrationData:exists()
+    end
+  end
+  local scanMigrationData = function()
+    if (self.onScanMigrationData ~= nil) then
+      self.onScanMigrationData(onScanFinished)
+    end
+  end
+  refreshButton = vb:button {
+    text = 'Refresh plugin migration data',
+    width = STATUS_COLUMN_WIDTH + ACTION_COLUMN_WIDTH,
+    visible = PluginMigrationData:exists(),
+    active = isAvailable,
+    tooltip = 'Reads the new and changed VST3 plugins again, which VST2 plugins they can replace',
+    notifier = scanMigrationData,
+  }
+
+  local onToggled = function(isEnabled)
+    if (isEnabled and not PluginMigrationData:exists()) then
+      scanMigrationData()
+    end
+  end
+
   parentView:add_child(self:createCompatibilityOptionRow(vb, 'migrateVST2ToVST3', 'VST3 migration',
-    vst2PluginCount .. 'x VST2', 'Installed VST3 version', isAvailable, config, onOptionChanged))
+    vst2PluginCount .. 'x VST2', 'Installed VST3 version', isAvailable, config, onOptionChanged, onToggled,
+    refreshButton))
   parentView:add_child(self:createHintRow(vb, {
     'Some DAWs, like Cubase, don\'t load VST2 plugins at all. Many plugins have a VST3 version',
     'that can replace their VST2 version and takes over its settings. If such a VST3 version is',
     'installed, the VST2 plugin is exported as this VST3 version. Otherwise it stays VST2.',
     'The automation of a replaced plugin is skipped, since its VST3 parameters are unknown.',
+    'Which VST3 plugin replaces which VST2 plugin is read once from all the installed VST3 plugins,',
+    'when the option is selected for the first time. After a plugin scan of Renoise it is refreshed.',
   }))
   if (not isAvailable) then
     parentView:add_child(self:createHintRow(vb, {

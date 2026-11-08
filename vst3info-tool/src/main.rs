@@ -9,6 +9,7 @@
  * Usage:
  *   vst3info-tool <plugin path> [--parameter-values] [--preset <preset path>]
  *   vst3info-tool --healthcheck [plugin paths...]
+ *   vst3info-tool --migration-info <plugin path>
  * ------------------------------------------------------------------------
  */
 
@@ -16,6 +17,7 @@ mod console_silencer;
 mod host_application;
 mod memory_stream;
 mod message_pump;
+mod migration_info;
 mod plugin_binary;
 mod plugin_inspector;
 mod plugin_module;
@@ -48,6 +50,11 @@ fn main() {
             &plugin_paths,
             plugin_binary::locate_plugin_binary,
         ),
+        Command::MigrationInfo { plugin_path } => {
+            let migration_info = migration_info::read_migration_info(&plugin_path)
+                .unwrap_or_else(|error| output::exit_with_error(&error));
+            output::print_result(migration_info);
+        }
         Command::ReadPlugin {
             plugin_path,
             additional_arguments,

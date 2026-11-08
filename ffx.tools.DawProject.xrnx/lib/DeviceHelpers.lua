@@ -145,15 +145,22 @@ function DeviceHelpers:getPluginFormat(pluginPath)
   return nil
 end
 
-function DeviceHelpers:getPluginDatabasePath(pluginFormat)
-  local preferencesPath = renoise.tool().bundle_path:gsub("\\", "/"):match("(.*/V" .. renoise.RENOISE_VERSION .. "/)")
+-- The preferences directory of the running Renoise version, which contains the tools and plugin databases
+function DeviceHelpers:getPreferencesPath()
+  return renoise.tool().bundle_path:gsub("\\", "/"):match("(.*/V" .. renoise.RENOISE_VERSION .. "/)")
+end
+
+-- The database of the plugins, or with isFailed of the plugins Renoise couldn't load
+function DeviceHelpers:getPluginDatabasePath(pluginFormat, isFailed)
+  local preferencesPath = self:getPreferencesPath()
   if (preferencesPath == nil) then
     return nil
   end
 
   local architecture = self:isIntelArchitecture() and 'x64' or jit.arch
-  local databaseName = (pluginFormat == 'vst2') and 'CachedVSTs_' or 'CachedVST3s_'
-  return preferencesPath .. databaseName .. architecture .. ".db"
+  local databaseName = (pluginFormat == 'vst2') and 'VSTs_' or 'VST3s_'
+  local prefix = isFailed and 'CachedFailed' or 'Cached'
+  return preferencesPath .. prefix .. databaseName .. architecture .. ".db"
 end
 
 -- Returns the name of the tool binary for reading a plugin, or nil and the reason if there is none

@@ -14,19 +14,29 @@ function BackgroundTask:__init(progressDialog)
   self.process = nil
 end
 
+function BackgroundTask:isRunning()
+  return self.process ~= nil and self.process:running()
+end
+
 function BackgroundTask:stop()
   if (self.process and self.process:running()) then
     self.process:stop()
   end
 end
 
--- The job runs in a coroutine, so it has to call coroutine.yield() regularly
-function BackgroundTask:run(title, job, finishedStatus, failedStatus)
+-- The job runs in a coroutine, so it has to call coroutine.yield() regularly.
+-- With autoCloseSeconds the dialog closes by itself after a successful job.
+function BackgroundTask:run(title, job, finishedStatus, failedStatus, autoCloseSeconds)
   self.progressDialog:start(title, function() self:stop() end)
 
   self.process = ProcessSlicer(
     job,
-    function() self.progressDialog:finish(finishedStatus) end
+    function()
+      self.progressDialog:finish(finishedStatus)
+      if (autoCloseSeconds ~= nil) then
+        self.progressDialog:closeAfterDelay(autoCloseSeconds)
+      end
+    end
   )
   self.process:set_error_callback(function(errorMessage)
     self.progressDialog:fail(failedStatus, errorMessage)

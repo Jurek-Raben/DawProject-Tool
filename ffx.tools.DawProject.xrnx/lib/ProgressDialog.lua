@@ -56,6 +56,7 @@ function ProgressDialog:__init()
   self.problems = {}
   self.pendingProblemLines = {}
   self.hasErrors = false
+  self.hasOpenedLogForErrors = false
   self.phaseStart = 0
   self.phaseEnd = 1
   self.phaseSteps = 0
@@ -78,6 +79,7 @@ function ProgressDialog:start(title, onCancel)
   self.problems = {}
   self.pendingProblemLines = {}
   self.hasErrors = false
+  self.hasOpenedLogForErrors = false
   self.phaseStart = 0
   self.phaseEnd = 1
   self.phaseSteps = 0
@@ -275,6 +277,12 @@ function ProgressDialog:flushLog()
   self.pendingLogLines = {}
   self.logView:scroll_to_last_line()
   self:updateProblemViews()
+
+  -- An error is explained by the messages around it, so the log opens by itself once
+  if (self.hasErrors and not self.hasOpenedLogForErrors) then
+    self.hasOpenedLogForErrors = true
+    self:setLogVisible(true)
+  end
 end
 
 function ProgressDialog:update()
@@ -309,6 +317,23 @@ function ProgressDialog:finish(status)
   self:setProgress(1)
   self:setStatus(status)
   self.actionButton.text = 'Close'
+end
+
+-- Closes the finished dialog after some seconds, e.g. after a job the user didn't start.
+-- It stays open with errors, and when another job uses the dialog in the meantime.
+function ProgressDialog:closeAfterDelay(seconds)
+  if (self.hasErrors) then
+    return
+  end
+  local dialog = self.dialog
+  local closeTimer
+  closeTimer = function()
+    renoise.tool():remove_timer(closeTimer)
+    if (not self.running and self.dialog == dialog and self.dialog ~= nil) then
+      self:close()
+    end
+  end
+  renoise.tool():add_timer(closeTimer, seconds * 1000)
 end
 
 function ProgressDialog:fail(status, errorMessage)

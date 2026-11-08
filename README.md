@@ -9,8 +9,6 @@ Please also read my suggestions for the Renoise API below, the tool requires bin
 - Auto converts Renoise sample instruments into Redux instances, to make it loadable in the target DAW
 - Note data and song structure
 - Tracks with multiple instruments are exported as group with one track per instrument, the mixer settings and effects stay on the group
-- Hidden note columns are ignored, just like Renoise does not play them
-- Notes in muted note columns are not exported
 - The transpose settings of plugin instruments are applied to the notes
 - Plugin automation data
 - Section naming
@@ -22,14 +20,13 @@ Please also read my suggestions for the Renoise API below, the tool requires bin
 - VST3 preset and automation export
 - VST2 plugins can be exported as their installed VST3 version, for DAWs without VST2 support like Cubase
 - Routing of tracks into groups and of sends, also for Cubase
-- The warnings name the track with its number and name, e.g. `track 16 (Bass)`
 - VST2 shell plugins, e.g. WaveShell
 - MIDI pattern automation, pitchbend, CC, aftertouch and program change
 - Polyphonic aftertouch
 - Progress dialog with cancel button, a list of all warnings and errors, and an expandable log
 - Health check before the export, with instructions for fixing problems on your operating system
 
-The master track always gets a limiter as last device, with a threshold of -0.2 dB and a release of 60 ms. It is a generic device of the format, so the DAW chooses its own limiter. Not every DAW has to support it.
+The master track always gets a limiter as last device, with a threshold of -0.2 dB and a release of 60 ms.
 
 #### Workarounds thru helper tools
 

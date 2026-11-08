@@ -25,8 +25,7 @@ function DeviceExporter:__init(config, progress, layout, pluginInfoCache, automa
   self.substitutions = substitutions
   self.exportId = os.date('%Y%m%d%H%M%S')
   self.instrIndexCache = Cache()
-  -- plugins can be installed between two exports
-  Vst3Migration.installedClassIds = nil
+  Vst3Migration:resetCaches()
 end
 
 function DeviceExporter:generateDevicesForXML(track)

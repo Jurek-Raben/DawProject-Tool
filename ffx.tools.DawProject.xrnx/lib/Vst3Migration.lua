@@ -10,6 +10,11 @@
 -- A VST3 plugin that can replace its VST2 version has a class id that is
 -- derived from the VST2 id, and it accepts the VST2 state. The vendors derive
 -- the class id in different ways, each scheme below knows one of them:
+--  - Plugin compatibility: the VST3 plugin declares which VST2 plugins it
+--    replaces, in its moduleinfo.json or its factory. These declarations are
+--    read by the plugin migration data scan, see PluginMigrationData. The old
+--    class ids are in the Steinberg scheme, the new one can be any class id.
+--    The VST2 state is wrapped like in the Steinberg scheme.
 --  - Steinberg scheme, also used by JUCE with JUCE_VST3_CAN_REPLACE_VST2:
 --    'VST' + VST2 id + the lower case name. The name is the internal one of
 --    the vendor, which can differ from the name in Renoise (e.g. 'Uhbik-A'
@@ -111,8 +116,81 @@ local function findMeldaClassId(vst2Id, _, installedClassIds)
   return installedClassIds[classId] and classId or nil
 end
 
+-- The declared compatibilities of the plugin migration data, by the prefix 'VST' + VST2 id of the old
+-- class id. Each one is { newClassId, oldClassId }.
+function Vst3Migration:getCompatibilityIndex()
+  if (self.compatibilityIndex ~= nil) then
+    return self.compatibilityIndex
+  end
+
+  local index = {}
+  local data = PluginMigrationData:load()
+  for _, entry in ipairs(data and data.plugins or {}) do
+    for _, compatibility in ipairs(entry.error == nil and entry.compatibility or {}) do
+      for _, oldClassId in ipairs(compatibility.old or {}) do
+        -- other old class ids are VST3 ones, or the ones of a controller ('VSE')
+        local prefix = string.sub(oldClassId, 1, #STEINBERG_CLASS_ID_PREFIX + 8)
+        if (string.sub(oldClassId, 1, #STEINBERG_CLASS_ID_PREFIX) == STEINBERG_CLASS_ID_PREFIX and
+              type(compatibility.new) == 'string') then
+          index[prefix] = index[prefix] or {}
+          table.insert(index[prefix], { newClassId = compatibility.new, oldClassId = oldClassId })
+        end
+      end
+    end
+  end
+
+  self.compatibilityIndex = index
+  return index
+end
+
+local function findDeclaredClassId(vst2Id, pluginNames, installedClassIds)
+  local prefix = STEINBERG_CLASS_ID_PREFIX .. string.format('%08X', vst2Id)
+  local candidates = {}
+  local candidateCount = 0
+  for _, compatibility in ipairs(Vst3Migration:getCompatibilityIndex()[prefix] or {}) do
+    if (installedClassIds[compatibility.newClassId]) then
+      if (candidates[compatibility.newClassId] == nil) then
+        candidateCount = candidateCount + 1
+      end
+      candidates[compatibility.newClassId] = candidates[compatibility.newClassId] or {}
+      table.insert(candidates[compatibility.newClassId], compatibility.oldClassId)
+    end
+  end
+
+  local classIds = {}
+  for classId in pairs(candidates) do
+    table.insert(classIds, classId)
+  end
+  table.sort(classIds)
+  if (candidateCount <= 1) then
+    return classIds[1]
+  end
+
+  -- e.g. a VST3 shell with several versions, the old class id contains the name of the VST2 plugin
+  for _, pluginName in ipairs(pluginNames) do
+    if (type(pluginName) == 'string' and pluginName ~= '') then
+      local oldClassId = Vst3Migration:createSteinbergClassId(vst2Id, pluginName)
+      for _, classId in ipairs(classIds) do
+        for _, candidateOldClassId in ipairs(candidates[classId]) do
+          if (candidateOldClassId == oldClassId) then
+            return classId
+          end
+        end
+      end
+    end
+  end
+  print('warning: VST2 plugin ' .. tostring(pluginNames[1]) .. ' stays VST2, since several VST3 plugins replace it: ' ..
+    table.concat(classIds, ', '))
+  return nil
+end
+
 -- Each scheme finds the installed class id of a VST2 plugin, and creates the VST3 state
 local SCHEMES = {
+  {
+    name = 'plugin compatibility',
+    findClassId = findDeclaredClassId,
+    createState = createSteinbergState,
+  },
   {
     name = 'Steinberg',
     findClassId = findSteinbergClassId,
@@ -124,6 +202,12 @@ local SCHEMES = {
     createState = createMeldaState,
   },
 }
+
+-- Plugins can be installed and the migration data can be refreshed between two exports
+function Vst3Migration:resetCaches()
+  self.installedClassIds = nil
+  self.compatibilityIndex = nil
+end
 
 -- The installed VST3 plugins, as set of upper case class ids
 function Vst3Migration:getInstalledClassIds(deviceRole)

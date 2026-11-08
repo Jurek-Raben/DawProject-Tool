@@ -85,6 +85,27 @@ function HealthCheck:createChecks()
   return checks
 end
 
+-- The checks of the plugin migration data scan, which reads the VST3 plugins from the plugin database of
+-- Renoise with the native VST3 helper tool. No plugin is accessed.
+function HealthCheck:createMigrationChecks()
+  local toolName = DeviceHelpers:getInfoToolName('vst3', false)
+  return {
+    { title = 'Renoise plugin database', run = function() return self:checkPluginDatabases({ 'vst3' }) end },
+    { title = 'Helper tool ' .. toolName, run = function() return self:checkInfoTool(toolName, {}) end },
+  }
+end
+
+-- Runs the checks without the dialog, e.g. before an automatic job
+function HealthCheck:arePassing(checks)
+  for _, check in ipairs(checks) do
+    local success, result = pcall(check.run)
+    if (not success or result == nil or result.status ~= HealthCheckStatus.OK) then
+      return false
+    end
+  end
+  return true
+end
+
 function HealthCheck:getEnabledPluginFormats()
   local formats = {}
   if (self.config.exportVST2 == true and self.config.useVST2InfoTool == true) then

@@ -23,6 +23,7 @@ require('lib/SongHelpers')
 require('lib/DeviceHelpers')
 require('lib/ReduxPluginHelpers')
 require('lib/Vst3Migration')
+require('lib/PluginMigrationData')
 require('lib/Cache')
 require('lib/ProjectFiles')
 require('lib/MeldaPreset')
@@ -87,7 +88,8 @@ function DawProject:configureSubstitutions()
       config[configKey] = value
       self.configurator:setConfig(config)
     end,
-    function() self:startExport() end
+    function() self:startExport() end,
+    function(onFinished) self:scanPluginMigrationData(onFinished) end
   )
 end
 
@@ -137,6 +139,74 @@ function DawProject:convertAllInstrumentsToRedux()
     'Conversion done!',
     'Conversion failed!'
   )
+end
+
+-- Reads which installed VST3 plugins can replace older plugins, independent of the export.
+-- onFinished is called after a successful scan, with autoCloseSeconds the dialog closes by itself.
+function DawProject:scanPluginMigrationData(onFinished, autoCloseSeconds)
+  backgroundTask:stop()
+  local isRefresh = PluginMigrationData:exists()
+  backgroundTask:run(
+    isRefresh and 'Refreshing plugin migration data' or 'Building plugin migration data',
+    function()
+      PluginMigrationData:scan(progressDialog)
+      self:refreshMigrationMenu()
+      if (onFinished ~= nil) then
+        onFinished()
+      end
+    end,
+    'Plugin migration data done!',
+    'Plugin migration data failed!',
+    autoCloseSeconds
+  )
+end
+
+local MIGRATION_MENU_PREFIX = "Main Menu:Tools:ffx.tools.DawProject:"
+local MIGRATION_MENU_BUILD = MIGRATION_MENU_PREFIX .. "Build plugin migration data..."
+local MIGRATION_MENU_REFRESH = MIGRATION_MENU_PREFIX .. "Refresh plugin migration data..."
+
+-- The first scan builds the data, every later one refreshes it
+function DawProject:refreshMigrationMenu()
+  MenuEntry:remove(MIGRATION_MENU_BUILD)
+  MenuEntry:remove(MIGRATION_MENU_REFRESH)
+  MenuEntry:add(PluginMigrationData:exists() and MIGRATION_MENU_REFRESH or MIGRATION_MENU_BUILD,
+    function() self:scanPluginMigrationData() end)
+end
+
+-- Both hooks fire after a plugin scan of Renoise, maybe several times, so the refresh waits until they are quiet
+local PLUGIN_SCAN_QUIET_SECONDS = 2
+-- The refresh after a plugin scan wasn't started by the user, so its dialog closes by itself
+local PLUGIN_SCAN_DIALOG_CLOSE_SECONDS = 2
+
+-- Refreshes the migration data by itself after Renoise scanned its plugins, once the data was built
+function DawProject:watchPluginScans()
+  local refreshTime = nil
+
+  local refreshWhenQuiet
+  refreshWhenQuiet = function()
+    -- e.g. an export has to finish first
+    if (refreshTime == nil or os.time() < refreshTime or backgroundTask:isRunning()) then
+      return
+    end
+    Notifiers:remove(Tool.app_idle_observable, refreshWhenQuiet)
+    refreshTime = nil
+
+    -- the same checks as before an export, but nothing happens if they fail, the export reports them
+    local healthCheck = HealthCheck(config)
+    if (PluginMigrationData:exists() and healthCheck:arePassing(healthCheck:createMigrationChecks())) then
+      print('info: the plugins of Renoise have changed, the plugin migration data is refreshed')
+      self:scanPluginMigrationData(nil, PLUGIN_SCAN_DIALOG_CLOSE_SECONDS)
+    end
+  end
+
+  local onPluginsChanged = function()
+    refreshTime = os.time() + PLUGIN_SCAN_QUIET_SECONDS
+    Notifiers:add(Tool.app_idle_observable, refreshWhenQuiet)
+  end
+
+  local app = renoise.app()
+  Notifiers:add(app.audio_plugin_effects_observable, onPluginsChanged)
+  Notifiers:add(app.audio_plugin_instruments_observable, onPluginsChanged)
 end
 
 function DawProject:repack()
@@ -205,6 +275,8 @@ function DawProject:__init()
     --}
 
     MenuEntry:add("Main Menu:File:Export Song to .dawproject...", function() self:export() end)
+    self:refreshMigrationMenu()
+    self:watchPluginScans()
 
     -- TODO import
     -- MenuEntry:add("Main Menu:File:Import .dawproject Song...", function() self:import() end)
