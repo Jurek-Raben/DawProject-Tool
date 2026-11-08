@@ -28,11 +28,12 @@ Please also read my suggestions for the Renoise API below, the tool requires bin
 
 The master track always gets a limiter as last device, with a threshold of -0.2 dB and a release of 60 ms.
 
-#### Workarounds thru helper tools
+#### Workarounds through helper tools
 
 - VST2 preset export (included VST2 helper tool provides missing plugin id)
 - VST2 automation (included VST2 helper tool provides missing plugin id)
 - VST3 automation mapping (included VST3 helper tool provides parameter ids)
+- VST3 migration (included VST3 helper tool reads which VST2 plugins a VST3 plugin replaces)
 - AU preset export (plist util converts preset file)
 - AU automation mapping (auval provides missing parameter ids)
 
@@ -41,7 +42,6 @@ The master track always gets a limiter as last device, with a threshold of -0.2 
 - Master track automation conversion
 - Redux macro device to instrument device automation conversion
 - Automation of VST2 plugins that are exported as their VST3 version, the parameter ids of the VST3 version are unknown
-- Finding the VST3 version of more VST2 plugins, through the compatibility infos of the VST3 plugins (`moduleinfo.json`)
 - Studio One will incorrectly set/interpret the parameter ids for AudioUnits. Therefore automation for AudioUnits currently is lost in Studio One.
 
 ## Support my work
@@ -130,13 +130,19 @@ The VST3 tool can also list the scales of the parameters, optionally after loadi
 ./vst3info-tool-mac-arm "/Library/Audio/Plug-Ins/VST3/MyPlugin.vst3" --parameter-values --preset "MyPreset.vstpreset"
 ```
 
+The VST3 tool also reads which older plugins a VST3 plugin can replace, see [VST3 migration](#vst3-migration). It reads the `moduleinfo.json` of the plugin, and only loads the plugin if there is none.
+
+```bash
+./vst3info-tool-mac-arm --migration-info "/Library/Audio/Plug-Ins/VST3/MyPlugin.vst3"
+```
+
 ## Reporting problems
 
 If an export fails or sounds wrong, please report it in the [Renoise forum](https://forum.renoise.com/). The most helpful thing is the complete list of warnings and errors:
 
 1. Keep the export dialog open after the export, it does not close by itself.
 2. Select the whole text in the "Warnings and errors" field with the cursor and copy it. Please copy all of it, not only the last lines or a screenshot, since the cause often is mentioned further up.
-3. If the export was aborted, or if there are no warnings at all, also click on "Show log" and copy the whole log the same way.
+3. If the export was aborted, or if there are no warnings at all, also copy the whole log the same way. It opens by itself after an error, otherwise click on "Show log".
 4. Paste everything into your post, and also mention:
    - your operating system and whether it is Intel or ARM
    - the versions of Renoise and this tool
@@ -184,7 +190,16 @@ Some DAWs need a special export. The options are in the substitution dialog, bel
 
 #### VST3 migration
 
-Some DAWs, like Cubase, don't load VST2 plugins at all. Many plugins have a VST3 version which can replace the VST2 version and takes over its settings. With this option, a VST2 plugin is exported as its VST3 version, if such a version is installed. Otherwise it stays VST2. The option is only listed if the song contains VST2 plugins, and it needs the VST2 helper tool for the id of the plugin.
+Some DAWs, like Cubase, don't load VST2 plugins at all. Many plugins have a VST3 version which can replace the VST2 version and takes over its settings. With this option, a VST2 plugin is exported as its VST3 version, if such a version is installed. Otherwise it stays VST2. The option is only listed if the song contains VST2 plugins, and it needs the VST2 helper tool for the id of the plugin. The automation of a replaced plugin is skipped, since the parameter ids of its VST3 version are unknown.
+
+Most VST3 plugins declare which VST2 plugins they replace. These declarations are collected as plugin migration data:
+
+- The data is built when the option is selected for the first time, or under `Tools > ffx.tools.DawProject > Build plugin migration data...`. The VST3 helper tool reads every VST3 plugin of the plugin database of Renoise, without the ones Renoise failed to load.
+- Afterwards the menu entry and a button behind the option are called "Refresh plugin migration data". A refresh only reads the new and changed plugins, and the ones that failed before.
+- After a plugin scan of Renoise that changed the plugins, the data is refreshed by itself, if it was built before and the VST3 helper tool passes the same checks as before an export. Its dialog closes by itself after two seconds without errors.
+- The data is saved in the preferences directory of Renoise, e.g. `~/Library/Preferences/Renoise/V3.5.4/DawProjectPluginMigration.json`, so it survives updates of the tool.
+
+Without a declaration, two derived class ids are tried: the Steinberg scheme (`VST` + VST2 id + name), which JUCE plugins use, and the one of MeldaProduction. The log tells which plugins were replaced, e.g. `is exported as its VST3 version ... (plugin compatibility scheme)`.
 
 #### Export for Cubase
 
