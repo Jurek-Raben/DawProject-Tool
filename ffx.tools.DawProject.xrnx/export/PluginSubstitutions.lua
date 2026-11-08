@@ -162,7 +162,7 @@ function PluginSubstitutions:findDeviceSubstitution(device, trackNum, deviceInde
     if (substitution:isUsable()) then
       return substitution
     end
-    print('warning: ' .. device.name .. ' at track ' .. trackNum ..
+    print('warning: ' .. device.name .. ' at track ' .. SongHelpers:getTrackLabel(trackNum) ..
       ' is missing in the export, since its parameters are unknown')
     return nil
   end)

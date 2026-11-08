@@ -213,7 +213,7 @@ function NoteAbstraction:findAutomationTargetInstrument(device, deviceIndex, tra
 
   if (numMatches > 1) then
     self:warnOnceIfAutomated(device, trackNum, deviceIndex, 'warning: target of ' .. device.name .. ' at track ' ..
-      trackNum .. ' is ambiguous, using the instrument playing in each pattern')
+      SongHelpers:getTrackLabel(trackNum) .. ' is ambiguous, using the instrument playing in each pattern')
   end
 
   if (isMatching[slotInstrument]) then
@@ -381,7 +381,7 @@ function NoteAbstraction:addPatternTrackAutomation(automationEvents, pattern, po
   -- a column can refer to an instrument that doesn't exist (anymore)
   if (noteColumn.instrument_value ~= renoise.PatternLine.EMPTY_INSTRUMENT and noteColumn.instrument_value >= #Song.instruments) then
     print('warning: skipping invalid instrument ' .. noteColumn.instrument_string ..
-      ' at pattern ' .. position.pattern .. ', track ' .. position.track ..
+      ' at pattern ' .. position.pattern .. ', track ' .. SongHelpers:getTrackLabel(position.track) ..
       ', line ' .. position.line .. ', column ' .. position.column)
     return
   end
@@ -483,7 +483,7 @@ end
 
 function NoteAbstraction:warnAboutSkippedAutomation(device, trackNum, deviceIndex, reason)
   self:warnOnceIfAutomated(device, trackNum, deviceIndex,
-    'warning: skipping automation of ' .. device.name .. ' at track ' .. trackNum .. ': ' .. reason)
+    'warning: skipping automation of ' .. device.name .. ' at track ' .. SongHelpers:getTrackLabel(trackNum) .. ': ' .. reason)
 end
 
 -- The name of the slots of an automation device without a target, their automation has no effect

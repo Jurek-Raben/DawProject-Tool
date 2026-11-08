@@ -185,7 +185,7 @@ function DeviceExporter:addInstrumentDevicesForXML(devicesObj, instr, instrIndex
 
   -- e.g. a plugin that could not be loaded, as Redux this would only be an empty instrument
   if (instr and instr.plugin_properties.plugin_device == nil and #instr.samples == 0) then
-    print('warning: track ' .. trackIndex .. ' has no sound source, since the instrument has no samples ' ..
+    print('warning: track ' .. SongHelpers:getTrackLabel(trackIndex) .. ' has no sound source, since the instrument has no samples ' ..
       'and no loaded plugin:', instr.name)
     return
   end

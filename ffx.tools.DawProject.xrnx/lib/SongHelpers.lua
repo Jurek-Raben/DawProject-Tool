@@ -29,6 +29,14 @@ function SongHelpers:getTrackIndex(track)
   return nil
 end
 
+-- Track number with name for messages, e.g. "16 (Bass)"
+function SongHelpers:getTrackLabel(trackIndex)
+  if (type(trackIndex) == 'number' and trackIndex >= 1 and trackIndex <= #Song.tracks) then
+    return trackIndex .. ' (' .. Song:track(trackIndex).name .. ')'
+  end
+  return tostring(trackIndex)
+end
+
 function SongHelpers:getChainIndex(chain, instrument)
   local numChains = #instrument.sample_device_chains
   for index = 1, numChains do
