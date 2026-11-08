@@ -2,7 +2,7 @@
 
 A daw project export tool (and later import maybe) for the Renoise DAW, starting from version 3.5 and upwards.
 
-Please also read my suggestions for the Renoise API below, the tool requires binary helper tools so far which provide required information that currently is not avaialble thru the Renoise API.
+Please also read my suggestions for the Renoise API below, the tool requires binary helper tools so far which provide required information that currently is not available through the Renoise API.
 
 #### Working so far
 
@@ -15,11 +15,14 @@ Please also read my suggestions for the Renoise API below, the tool requires bin
 - Plugin automation data
 - Section naming
 - Track coloring and naming
-- Loads fine into Bitwig 5.3+/6 (all) and Studio One 7.2+ (VST3 completely, AU without automation)
+- Loads fine into Bitwig 5.3+/6 (all), Fender Studio 8 / Studio One 7.2+ (VST2 and VST3, AU without automation) and Cubase 15/16 (VST3, with the option "Export for Cubase", see [DAW compatibility](#daw-compatibility))
 - You can also convert any sample instrument to Redux VST3 via context menu
-- AudioUnit preset and automation export (not working in S1, due to bugs in S1)
-- VST2 preset and automation export (not working in S1, due to bugs in S1)
+- AudioUnit preset and automation export (automation not working in Studio One, due to bugs in Studio One)
+- VST2 preset and automation export, the presets are stored as banks (.fxb)
 - VST3 preset and automation export
+- VST2 plugins can be exported as their installed VST3 version, for DAWs without VST2 support like Cubase
+- Routing of tracks into groups and of sends, also for Cubase
+- The warnings name the track with its number and name, e.g. `track 16 (Bass)`
 - VST2 shell plugins, e.g. WaveShell
 - MIDI pattern automation, pitchbend, CC, aftertouch and program change
 - Polyphonic aftertouch
@@ -40,8 +43,8 @@ The master track always gets a limiter as last device, with a threshold of -0.2 
 
 - Master track automation conversion
 - Redux macro device to instrument device automation conversion
-- No idea why VST3 preset loading fails in Cubase 14+. Might be the preset data itself. As a workaround, load the exported dawproject into S1 and then again export as dawproject. Bitwig exports also fail to load in Cubase. S1 uses an uncompressed zip type.
-- VST2 preset loading and mapping is buggy in Studio One currently and needs to be fixed.
+- Automation of VST2 plugins that are exported as their VST3 version, the parameter ids of the VST3 version are unknown
+- Finding the VST3 version of more VST2 plugins, through the compatibility infos of the VST3 plugins (`moduleinfo.json`)
 - Studio One will incorrectly set/interpret the parameter ids for AudioUnits. Therefore automation for AudioUnits currently is lost in Studio One.
 
 ## Support my work
@@ -154,7 +157,7 @@ A song has to fulfill the following requirements for a working export:
 
 ## Plugin substitutions
 
-A DAW can't load Renoise devices. After the health check you can choose which of them are exported as plugin instead. Only the devices that are used in the song are listed, together with their number of occurrences. Without any of them the dialog is skipped. The presets are generated and the automation is converted.
+A DAW can't load Renoise devices. After the health check you can choose which of them are exported as plugin instead. Only the devices that are used in the song are listed, together with their number of occurrences. The presets are generated and the automation is converted. Below them, the same dialog contains the [DAW compatibility](#daw-compatibility) options, so it is shown before every export.
 
 If a plugin is not installed, it is displayed as not installed with a download button. An option without any installed plugin is disabled. If several plugins are installed for an option, you can select one in the dialog, by default in the order listed below. All the choices are saved.
 
@@ -178,6 +181,20 @@ All of them are VST3 plugins, available from [MeldaProduction](https://www.melda
 
 The plugins are named like the devices in Renoise, with their position on the track, e.g. `EQ 5 pos 2`.
 
+## DAW compatibility
+
+Some DAWs need a special export. The options are in the substitution dialog, below the substitutions, and they are saved like all the other choices.
+
+#### VST3 migration
+
+Some DAWs, like Cubase, don't load VST2 plugins at all. Many plugins have a VST3 version which can replace the VST2 version and takes over its settings. With this option, a VST2 plugin is exported as its VST3 version, if such a version is installed. Otherwise it stays VST2. The option is only listed if the song contains VST2 plugins, and it needs the VST2 helper tool for the id of the plugin.
+
+#### Export for Cubase
+
+The DAWs expect the channel of a group at different places. Cubase only routes the tracks of a group into it, if the group is a separate group channel. Bitwig and Studio only keep the plugins of a group, if its channel is inside of the group. So this option is only for Cubase, by default the export works for the other DAWs.
+
+For Cubase also enable the VST3 migration, since Cubase ignores VST2 plugins. Before the import, set the default stereo panner of Cubase to "Stereo Balance Panner" under `Preferences > Mix`. The combined panner of Cubase only moves the left side by the pan value of the project, so all the tracks sound panned to the right.
+
 ## Disclaimer
 
 The release packages of this Renoise tool **contain pre-built binaries of the VST info helper tools**. These are built from this source code by the GitHub workflow of this repository. If you are unsure you can build these yourself, or simply disable the usage in the tool's preferences. Building will require basic knowledge about how to setup a Rust dev environment. macOS should work best for that purpose.
@@ -190,7 +207,7 @@ So I am not responsible for any damage these binaries could do to your system an
 
 ## DAW specific workarounds
 
-Bitwig loads all the exports just fine, just like it should be. Studio One 7.2+ only correctly works with VST3s. If you want to import into Cubase 14/15, first import to Studio One, then export as dawproject again. Then Cubase also loads the VST3 presets. Most likely these problems are caused by bugs inside Studio One and Cubase, not this exporter tool.
+Bitwig loads all the exports just fine, just like it should be. Fender Studio 8 / Studio One 7.2+ loads VST2 and VST3, but loses the automation of AudioUnits. Cubase 15/16 loads the exports with the options described in [DAW compatibility](#daw-compatibility).
 
 ## Development insights
 
@@ -233,20 +250,13 @@ For packing the tool itself, create a `build` directory and use `./build_for_mac
 
 Bitwig caches the files of a project by their name. It would load the presets of a previous export with the same names, even after importing the new one. So all the preset file names contain a timestamp of the export.
 
-#### Source code structure
-
-- `main.lua` - The entry point: menus, options and the listeners of Renoise
-- `lib/` - The helpers, like the temporary files, background tasks, dialogs and preset files. Some of them are currently only used by the export, like `NoteAbstraction`
-- `export/` - The export, one class per topic. `DawProjectExporter` is the sequence, `TrackLayout` knows how tracks are split by instrument, and the others generate the tracks, devices, automation and arrangement. `SubstitutionTable` lists the plugin substitutions
-- `import/` - The future import, not available in the menu yet
-
 #### Releases
 
 Every push to `main` builds the helper tools for all platforms and packages the tool. The version comes from `manifest.xml`: a new version creates a new release, otherwise the package of the existing release is replaced. Code between `-- @build:skip-start` and `-- @build:skip-end` is removed from the package, and the placeholder `@build:version@` in `main.lua` is replaced with the version.
 
 #### Suggestions for the API
 
-> `renoise.DeviceParameter.plugin_parameter_id` - int, unique VST3 parameter id provided by the plugin, is a simple index for VST2 (should be avaialable for AudioUnit, too)
+> `renoise.DeviceParameter.plugin_parameter_id` - int, unique VST3 parameter id provided by the plugin, is a simple index for VST2 (should be available for AudioUnit, too)
 
 > `renoise.AudioDevice.unique_id` - Just as "Unique ID" in the info tooltip. Renoise does not use it for VST2, instead it uses the plugin filename. But the actual ID is needed for the export.
 
@@ -281,6 +291,7 @@ https://github.com/rxi/json.lua?tab=readme-ov-file
 
 xml2lua by Manoel Campos da Silva Filho, Paul Chakravarti
 https://github.com/manoelcampos/xml2lua
+(extended by an optional `_order` of the child tags, since some DAWs expect the tracks before the channels)
 
 Also ProcessSlicer.
 
