@@ -27,6 +27,15 @@ local function isDifferent(value, defaultValue)
   return math.abs(value - defaultValue) > VALUE_TOLERANCE
 end
 
+-- The track headroom of the song lowers the input of each sequencer track, before its pre mixer.
+-- Group tracks only sum their tracks, which are lowered already. Used without the substitution, too.
+function getTrackHeadroom(track)
+  if (track.type ~= renoise.Track.TRACK_TYPE_SEQUENCER) then
+    return 1
+  end
+  return Song.transport.track_headroom
+end
+
 -- A positive delay of Renoise is a plain delay. A negative one is reported as latency to the DAW.
 local function createDelayAttributes(delayMilliseconds)
   if (delayMilliseconds == 0) then
@@ -64,9 +73,10 @@ local function getPlainValue(parameter, automationValue)
   return parameter.value_min + automationValue * (parameter.value_max - parameter.value_min)
 end
 
--- A value is split into attenuation and boost, so both lanes together result in the exact gain
-local function mapGainAutomation(parameter, automationValue)
-  local amplitude = getPlainValue(parameter, automationValue)
+-- A value is split into attenuation and boost, so both lanes together result in the exact gain.
+-- The amplitude is multiplied by the factor, e.g. the track headroom of the song.
+local function mapGainAutomation(parameter, automationValue, factor)
+  local amplitude = getPlainValue(parameter, automationValue) * (factor or 1)
   return {
     { paramIndex = PARAMETER_VOLUME, name = 'Volume', value = MeldaScales:getVolumeKnob(amplitude) },
     {
@@ -137,6 +147,7 @@ MUtilityPreMixerSubstitution.pluginName = 'MUtility'
 
 function MUtilityPreMixerSubstitution:__init(track, config)
   self.track = track
+  self.headroom = getTrackHeadroom(track)
   self.containsDelay = config[TRACK_DELAY_TARGET_CONFIG_KEY] == TRACK_DELAY_IN_PLUGIN
   self.volumeParameterNum = nil
   self.panningParameterNum = nil
@@ -153,23 +164,23 @@ function MUtilityPreMixerSubstitution:__init(track, config)
   end
 end
 
--- A track without any pre mixer settings doesn't need a plugin
+-- A track without any pre mixer settings and without headroom doesn't need a plugin
 function MUtilityPreMixerSubstitution:isUsed()
   local volume = self.track.prefx_volume
   local panning = self.track.prefx_panning
-  return isDifferent(volume.value, 1) or isDifferent(panning.value, 0.5) or
+  return isDifferent(volume.value, 1) or isDifferent(panning.value, 0.5) or isDifferent(self.headroom, 1) or
       volume.is_automated or panning.is_automated or (self.containsDelay and self.track.output_delay ~= 0)
 end
 
 function MUtilityPreMixerSubstitution:createPresetData()
   return MeldaPreset:create(MUTILITY_CLASS_ID,
-    createSettingsXml(self.track.prefx_volume.value, self.track.prefx_panning.value, false, false,
+    createSettingsXml(self.track.prefx_volume.value * self.headroom, self.track.prefx_panning.value, false, false,
       self.containsDelay and self.track.output_delay or 0))
 end
 
 function MUtilityPreMixerSubstitution:mapAutomationValue(parameter, parameterNum, automationValue)
   if (parameterNum == self.volumeParameterNum) then
-    return mapGainAutomation(parameter, automationValue)
+    return mapGainAutomation(parameter, automationValue, self.headroom)
   elseif (parameterNum == self.panningParameterNum) then
     return mapPanningAutomation(parameter, automationValue)
   end

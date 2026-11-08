@@ -72,7 +72,22 @@ function DeviceExporter:generateDevicesForXML(track)
     self:addMasterLimiterObj(devicesObj, trackIndex)
   end
 
+  self:applyDeviceElementOrder(devicesObj)
   return devicesObj
+end
+
+-- The format defines the order of the elements of a device. Studio ignores e.g. a disabled state,
+-- if the elements come in another order, Bitwig accepts any order.
+local DEVICE_ELEMENT_ORDER = { 'Parameters', 'Enabled', 'State' }
+
+function DeviceExporter:applyDeviceElementOrder(devicesObj)
+  for _, deviceObj in ipairs(devicesObj) do
+    for _, device in pairs(deviceObj) do
+      if (type(device) == 'table') then
+        device._order = DEVICE_ELEMENT_ORDER
+      end
+    end
+  end
 end
 
 -- A generic device of the format, the DAW chooses its own limiter for it

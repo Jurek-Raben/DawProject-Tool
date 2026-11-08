@@ -10,8 +10,7 @@
  *   vst3info-tool <plugin path> [--parameter-values] [--preset <preset path>] [--class-id <class id>]
  *   vst3info-tool --healthcheck [plugin paths...]
  *   vst3info-tool --migration-info <plugin path>
- *   vst3info-tool --remap-parameters <plugin path> <class id> <replaced class id> [old parameter ids...]
- * ------------------------------------------------------------------------
+ *   vst3info-tool --remap-parameters <plugin path> <class id> <replaced class id> [old parameter ids...] * ------------------------------------------------------------------------
  */
 
 mod console_silencer;

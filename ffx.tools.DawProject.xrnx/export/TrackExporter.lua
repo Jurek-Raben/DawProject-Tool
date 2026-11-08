@@ -31,6 +31,26 @@ function TrackExporter:addGroupChannel(groupObj)
   end
 end
 
+-- Renoise applies the volume of the instrument, and of its plugin, before the effects of the track.
+-- A DAW has no such volume, so it becomes part of the volume of the channel playing the instrument.
+function TrackExporter:getInstrumentVolume(instrumentNum)
+  if (instrumentNum == nil) then
+    return 1
+  end
+  local instrument = Song:instrument(instrumentNum)
+  local volume = instrument.volume
+  if (instrument.plugin_properties.plugin_device ~= nil) then
+    volume = volume * instrument.plugin_properties.volume
+  end
+  return volume
+end
+
+-- The instrument of a track that is not split, like the device exporter finds it
+function TrackExporter:findInstrumentOfTrack(track, trackIndex)
+  local pool = self.layout.instrumentPools[trackIndex]
+  return pool and pool.primary or SongHelpers:getInstrumentIndexOfTrack(track)
+end
+
 -- destinationChannelId is the channel the track is routed to, nil for the master
 function TrackExporter:addTrackToStructure(track, targetObj, destinationChannelId)
   self.progress:advancePhase(#Song.tracks)
@@ -106,6 +126,8 @@ function TrackExporter:addTrackToStructure(track, targetObj, destinationChannelI
   elseif (track.type == renoise.Track.TRACK_TYPE_SEQUENCER) then
     _trackObj._attr['contentType'] = 'notes'
     _trackObj.Channel._attr['role'] = 'regular'
+    _trackObj.Channel.Volume._attr.value = track.postfx_volume.value *
+        self:getInstrumentVolume(self:findInstrumentOfTrack(track, trackIndex))
   elseif (track.type == renoise.Track.TRACK_TYPE_GROUP) then
     isGroup = true
     _trackObj._attr['contentType'] = 'tracks'
@@ -116,6 +138,12 @@ function TrackExporter:addTrackToStructure(track, targetObj, destinationChannelI
   elseif (track.type == renoise.Track.TRACK_TYPE_MASTER) then
     _trackObj._attr['contentType'] = 'audio notes'
     _trackObj.Channel._attr['role'] = 'master'
+  end
+
+  -- the headroom of the song belongs into the pre mixer plugin, without it into the volume of the channel
+  if (track.type == renoise.Track.TRACK_TYPE_SEQUENCER and
+        self.deviceExporter.substitutions:findPreMixerSubstitution(trackIndex) == nil) then
+    _trackObj.Channel.Volume._attr.value = _trackObj.Channel.Volume._attr.value * getTrackHeadroom(track)
   end
 
   _trackObj.Channel._attr['destination'] = destinationChannelId
@@ -175,7 +203,7 @@ function TrackExporter:addInstrumentTrackToStructure(track, trackIndex, instrume
           min = '0',
           max = '2',
           unit = "linear",
-          value = '1',
+          value = self:getInstrumentVolume(instrumentNum),
         }
       },
     }
@@ -183,6 +211,7 @@ function TrackExporter:addInstrumentTrackToStructure(track, trackIndex, instrume
 
   local devices = {}
   self.deviceExporter:addInstrumentDevicesForXML(devices, instrument, instrumentNum, trackIndex, trackId)
+  self.deviceExporter:applyDeviceElementOrder(devices)
   if (#devices > 0) then
     instrumentTrackObj.Channel.Devices = devices
   end

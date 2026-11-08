@@ -181,7 +181,8 @@ If a plugin is not installed, it is displayed as not installed with a download b
 
 All of them are VST3 plugins, available from [MeldaProduction](https://www.meldaproduction.com/downloads), [UVI](https://www.uvi.net/shade) and [ZL Audio](https://zl-audio.github.io/plugins). The table above is defined in `export/SubstitutionTable.lua`.
 
-- **Pre gain and panning:** MUtility is placed before the effects of the track, using the +3 dB pan law of Renoise. It is only added to tracks using these settings.
+- **Pre gain and panning:** MUtility is placed before the effects of the track, using the +3 dB pan law of Renoise. The track headroom of the song options lowers the input of every sequencer track, so it is part of the gain. MUtility is only added to tracks using these settings, which are all sequencer tracks with a headroom below 0 dB. Without the substitution, the headroom becomes part of the volume of the channel.
+- **Instrument volume:** The volume of an instrument and of its plugin becomes part of the volume of the channel playing it, since a DAW has no such volume.
 - **Track delay:** By default the track delay shifts the MIDI notes in the exported clips, so it has no effect on group and send tracks. In the dialog you can select a delay inside of MUtility instead, which also works on these tracks. A negative delay is reported as latency there. Without the substitution of the pre mixer, the option `addTrackDelayToClips` decides about shifting the notes.
 - **Gainer:** The phase inversion of the channels is also exported.
 - **EQ 5 and EQ 10:** The first and the last band are exported as shelves, the others as peak filters. The ear guard limiter of Shade is disabled. The conversion of the bandwidth is an approximation, so each of both EQs has a Q factor in the dialog from x 0.25 to x 4, which makes the filters narrower or wider.
