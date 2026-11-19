@@ -211,9 +211,10 @@ local SCHEMES = {
 function Vst3Migration:resetCaches()
   self.installedClassIds = nil
   self.compatibilityIndex = nil
+  self.parametersByClassId = nil
 end
 
--- The installed VST3 plugins, as set of upper case class ids
+-- The installed VST3 plugins, as their device paths of Renoise by the upper case class ids
 function Vst3Migration:getInstalledClassIds(deviceRole)
   self.installedClassIds = self.installedClassIds or {}
   if (self.installedClassIds[deviceRole] ~= nil) then
@@ -234,7 +235,7 @@ function Vst3Migration:getInstalledClassIds(deviceRole)
   end
   for _, path in ipairs(paths) do
     if (string.sub(path, 1, #prefix) == prefix) then
-      classIds[string.upper(string.sub(path, #prefix + 1))] = true
+      classIds[string.upper(string.sub(path, #prefix + 1))] = path
     end
   end
 
@@ -257,6 +258,11 @@ function Vst3Migration:findInstalledTarget(vst2Id, pluginNames, deviceRole)
     end
   end
   return nil
+end
+
+-- The device path of the target in Renoise, for inserting it
+function Vst3Migration:getDevicePath(target, deviceRole)
+  return self:getInstalledClassIds(deviceRole)[target.classId]
 end
 
 -- Runs the VST3 helper tool, returns its result or nil and the reason
@@ -294,6 +300,21 @@ local function remapByPlugin(filePath, target, oldParameters)
   return newParameterIds
 end
 
+-- The parameters of the VST3 plugin as list of { id, index, title }, or nil and the reason.
+-- Loading the plugin takes a while, so they are cached.
+local function readVst3Parameters(filePath, classId)
+  Vst3Migration.parametersByClassId = Vst3Migration.parametersByClassId or {}
+  if (Vst3Migration.parametersByClassId[classId] ~= nil) then
+    return Vst3Migration.parametersByClassId[classId]
+  end
+  local plugin, problem = runVst3Tool(DeviceHelpers:quotePathForConsole(filePath) .. ' --class-id ' .. classId)
+  if (plugin == nil) then
+    return nil, problem
+  end
+  Vst3Migration.parametersByClassId[classId] = plugin.parameters or {}
+  return Vst3Migration.parametersByClassId[classId]
+end
+
 local function normalizeParameterName(name)
   return (string.lower(tostring(name or '')):gsub('%s+', ' '):gsub('^ ', ''):gsub(' $', ''))
 end
@@ -319,14 +340,14 @@ end
 --  1. the parameter with the old index as id is used, if its name is similar
 --  2. otherwise the only parameter with the same name is used
 local function remapByNames(filePath, target, oldParameters, newParameterIds)
-  local plugin, problem = runVst3Tool(DeviceHelpers:quotePathForConsole(filePath) .. ' --class-id ' .. target.classId)
-  if (plugin == nil) then
+  local parameters, problem = readVst3Parameters(filePath, target.classId)
+  if (parameters == nil) then
     return problem
   end
 
   local namesById = {}
   local idsByName = {}
-  for _, parameter in ipairs(plugin.parameters or {}) do
+  for _, parameter in ipairs(parameters) do
     local name = normalizeParameterName(parameter.title)
     namesById[parameter.id] = name
     -- a name of several parameters can't be assigned
@@ -346,12 +367,25 @@ local function remapByNames(filePath, target, oldParameters, newParameterIds)
   return nil
 end
 
+local function findTargetFilePath(target, deviceRole)
+  local pathPrefix = (deviceRole == 'instrument') and VST3_INSTRUMENT_PATH_PREFIX or VST3_EFFECT_PATH_PREFIX
+  return DeviceHelpers:findPluginFilePath(pathPrefix .. target.classId)
+end
+
+-- The parameters of the VST3 version as list of { id, index, title }, or nil and the reason
+function Vst3Migration:readParameters(target, deviceRole)
+  local filePath = findTargetFilePath(target, deviceRole)
+  if (filePath == nil) then
+    return nil, 'the file of the VST3 version is unknown'
+  end
+  return readVst3Parameters(filePath, target.classId)
+end
+
 -- Finds the parameter ids of the VST3 plugin, which replace the parameter indices of the VST2 plugin.
 -- oldParameters is a list of { id, name }. Returns a table of the new ids by the old indices, the
 -- method, or nil and the reason.
 function Vst3Migration:remapParameters(target, deviceRole, oldParameters)
-  local pathPrefix = (deviceRole == 'instrument') and VST3_INSTRUMENT_PATH_PREFIX or VST3_EFFECT_PATH_PREFIX
-  local filePath = DeviceHelpers:findPluginFilePath(pathPrefix .. target.classId)
+  local filePath = findTargetFilePath(target, deviceRole)
   if (filePath == nil) then
     return nil, 'the file of the VST3 version is unknown'
   end

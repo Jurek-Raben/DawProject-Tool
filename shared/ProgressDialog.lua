@@ -8,7 +8,7 @@
 -- Info here: https://creativecommons.org/licenses/by-nc-sa/4.0/
 -------------------------------------------------------------------------------
 
-local DIALOG_TITLE = 'DAW Project'
+local DEFAULT_DIALOG_TITLE = 'DAW Project'
 local DIALOG_WIDTH = 560
 local PERCENTAGE_WIDTH = 40
 local LOG_HEIGHT = 280
@@ -48,7 +48,9 @@ end
 
 class "ProgressDialog"
 
-function ProgressDialog:__init()
+-- The title names the tool, each job adds its own title
+function ProgressDialog:__init(toolTitle)
+  self.toolTitle = toolTitle or DEFAULT_DIALOG_TITLE
   self.dialog = nil
   self.running = false
   self.onCancel = nil
@@ -171,7 +173,7 @@ function ProgressDialog:start(title, onCancel)
   self:updateStatusView()
   self:updateProblemViews()
 
-  self.dialog = renoise.app():show_custom_dialog(DIALOG_TITLE .. ' - ' .. title .. '...', self.contentView)
+  self.dialog = renoise.app():show_custom_dialog(self.toolTitle .. ' - ' .. title .. '...', self.contentView)
   activeDialog = self
   renoise.tool():add_timer(self.onTimer, TIMER_INTERVAL_MS)
 end

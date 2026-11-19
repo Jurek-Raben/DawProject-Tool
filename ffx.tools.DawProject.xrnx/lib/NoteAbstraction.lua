@@ -21,7 +21,7 @@
 --]]
 
 
-require('lib/Cache')
+require('lib/shared/Cache')
 
 
 class "NoteAbstraction"

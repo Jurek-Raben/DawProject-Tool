@@ -79,6 +79,8 @@ function DawProjectExporter:export(filePath)
 
       Structure = trackExporter:generateParentTracksStructureDataForXML('Master'),
       Arrangement = {
+        -- Markers first, so DAWs like Cubase show the marker track at the top
+        _order = { 'Markers', 'Lanes' },
         Lanes = {
           _attr = {
             timeUnit = "beats",

@@ -7,8 +7,8 @@
 -- Info here: https://creativecommons.org/licenses/by-nc-sa/4.0/
 -------------------------------------------------------------------------------
 
-require('lib/Cache')
-local json = require('lib/json')
+require('lib/shared/Cache')
+local json = require('lib/shared/json')
 
 
 DeviceHelpers = {}

@@ -1,6 +1,8 @@
-# Builds the VST info tools for all platforms and the Renoise tool package (.xrnx) on every push/merge to main.
-# The package is a zip of the *contents* of ffx.tools.DawProject.xrnx/ (manifest.xml at the zip root).
-# It is uploaded as a workflow artifact and attached to a GitHub release named after the manifest version.
+# Builds the VST info tools for all platforms and the Renoise tool packages (.xrnx) on every push/merge to main.
+# Each tool is packaged separately: a zip of the *contents* of its .xrnx folder (manifest.xml at the zip root),
+# with the shared code of lib/shared and the VST info tools inside.
+# Each package is uploaded as a workflow artifact and attached to a GitHub release of its own, named after the
+# manifest version of the tool.
 
 name: Build xrnx
 
@@ -14,7 +16,6 @@ permissions:
   contents: read
 
 env:
-  TOOL_DIR: ffx.tools.DawProject.xrnx
   # The VST3 SDK is not part of this repository, the vst3 crate generates its bindings from it
   VST3_SDK_TAG: v3.7.13_build_42
   CROSS_REVISION: baf457efc2555225af47963475bd70e8d2f5993f
@@ -70,10 +71,21 @@ jobs:
           if-no-files-found: error
 
   package:
+    name: Package (${{ matrix.title }})
     needs: build-vst-tools
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    strategy:
+      # a failing tool must not stop the release of the other one
+      fail-fast: false
+      matrix:
+        include:
+          # the DAW Project Tool keeps its tags v<version> and stays the latest release of the repository
+          - { dir: ffx.tools.DawProject.xrnx, title: DAW Project Tool, tagPrefix: v, latest: true }
+          - { dir: ffx.tools.PluginMigrator.xrnx, title: Plugin Migrator, tagPrefix: plugin-migrator-v, latest: false }
+    env:
+      TOOL_DIR: ${{ matrix.dir }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -82,9 +94,10 @@ jobs:
 
       - name: Strip development-only code
         # Removes everything between "-- @build:skip-start" and "-- @build:skip-end" (inclusive) from all Lua files.
+        # -L and -R follow the symlink lib/shared to the shared code of the tools.
         run: |
-          find "$TOOL_DIR" -name '*.lua' -print0 | xargs -0 sed -i '/-- @build:skip-start/,/-- @build:skip-end/d'
-          if grep -rn '@build:skip\|_AUTO_RELOAD_DEBUG' "$TOOL_DIR" --include='*.lua'; then
+          find -L "$TOOL_DIR" -name '*.lua' -print0 | xargs -0 sed -i '/-- @build:skip-start/,/-- @build:skip-end/d'
+          if grep -Rn '@build:skip\|_AUTO_RELOAD_DEBUG' "$TOOL_DIR" --include='*.lua'; then
             echo "Development-only code left in the package" >&2
             exit 1
           fi
@@ -93,7 +106,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq luajit
-          find "$TOOL_DIR" -name '*.lua' -print0 | xargs -0 -n1 luajit -bl > /dev/null
+          find -L "$TOOL_DIR" -name '*.lua' -print0 | xargs -0 -n1 luajit -bl > /dev/null
 
       - name: Read version from manifest
         id: meta
@@ -119,6 +132,7 @@ jobs:
           fi
 
       - name: Remove binaries of the checkout
+        # in the Plugin Migrator, bin is a symlink to the binaries of the DAW Project Tool, only the link is removed
         run: rm -rf "$TOOL_DIR/bin"
 
       - name: Download VST tools
@@ -141,6 +155,7 @@ jobs:
         run: |
           mkdir -p dist
           cd "$TOOL_DIR"
+          # zip follows the symlink lib/shared and packs the files themselves, so no -y here
           zip -r -X "../dist/${{ steps.meta.outputs.file }}" . -x 'tmp/*' 'examples/*' 'config.json' 'preferences.xml' '.gitignore' '.DS_Store' '*/.DS_Store'
 
       - name: Upload artifact
@@ -152,7 +167,9 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v${{ steps.meta.outputs.version }}
+          TAG: ${{ matrix.tagPrefix }}${{ steps.meta.outputs.version }}
+          TITLE: ${{ matrix.title }} v${{ steps.meta.outputs.version }}
+          LATEST: ${{ matrix.latest }}
           FILE: dist/${{ steps.meta.outputs.file }}
         run: |
           if gh release view "$TAG" > /dev/null 2>&1; then
@@ -161,5 +178,5 @@ jobs:
           else
             # The newest commit on main usually is a merge commit, so the message of the commit before is used.
             notes=$(git log -2 --pretty=format:%B | tail -n1)
-            gh release create "$TAG" "$FILE" --target "$GITHUB_SHA" --title "DAW Project Tool $TAG" --notes "$notes"
+            gh release create "$TAG" "$FILE" --target "$GITHUB_SHA" --title "$TITLE" --notes "$notes" --latest="$LATEST"
           fi

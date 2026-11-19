@@ -14,7 +14,7 @@
 -- and the plugins that failed before.
 -------------------------------------------------------------------------------
 
-local json = require('lib/json')
+local json = require('lib/shared/json')
 
 local FILE_NAME = 'DawProjectPluginMigration.json'
 local FORMAT_VERSION = 1

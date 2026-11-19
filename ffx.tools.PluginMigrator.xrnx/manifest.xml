@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RenoiseScriptingTool doc_version="0">
+  <ApiVersion>6.2</ApiVersion>
+  <Id>ffx.tools.PluginMigrator</Id>
+  <Version>0.1</Version>
+  <Author>Jurek Raben</Author>
+  <Name>Plugin Migrator</Name>
+  <Category>Tools</Category>
+  <Description>Migrates VST2 plugins to their VST3 versions, keeping their state and automation</Description>
+  <Repository>https://github.com/Jurek-Raben/DawProject-Tool</Repository>
+  <Homepage>https://www.renoise.com</Homepage>
+</RenoiseScriptingTool>
