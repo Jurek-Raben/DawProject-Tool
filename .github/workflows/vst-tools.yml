@@ -1,0 +1,88 @@
+# Builds the VST info tools (vst2info-tool, vst3info-tool) for all platforms and uploads them as workflow artifacts
+# named vst-tools-<platform>. Called by build.yml, the artifacts are then used by the other jobs of the same run,
+# so the tools are only built once. Can also be started manually to only build the tools, without any release.
+
+name: VST tools
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # The VST3 SDK is not part of this repository, the vst3 crate generates its bindings from it
+  VST3_SDK_TAG: v3.7.13_build_42
+  CROSS_REVISION: baf457efc2555225af47963475bd70e8d2f5993f
+
+jobs:
+  build:
+    name: Build (${{ matrix.suffix }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - { os: macos-latest, builder: cargo, target: x86_64-apple-darwin, suffix: mac-x64, extension: '' }
+          - { os: macos-latest, builder: cargo, target: aarch64-apple-darwin, suffix: mac-arm, extension: '' }
+          - { os: ubuntu-latest, builder: cross, target: x86_64-pc-windows-gnu, suffix: win, extension: .exe }
+          - { os: ubuntu-latest, builder: cross, target: x86_64-unknown-linux-gnu, suffix: linux, extension: '' }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Insert version into Cargo.toml and Cargo.lock
+        # The tools get the release version, the version of the DAW Project Tool (output by --healthcheck).
+        # Cargo needs three parts, so e.g. 0.3 becomes 0.3.0. perl instead of sed, since sed -i differs on macOS.
+        run: |
+          version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' ffx.tools.DawProject.xrnx/manifest.xml)
+          if ! echo "$version" | grep -qE '^[0-9]+(\.[0-9]+){0,2}$'; then
+            echo "Invalid version in manifest.xml for Cargo: '$version'" >&2
+            exit 1
+          fi
+          while [ "$(echo "$version" | tr -cd . | wc -c)" -lt 2 ]; do version="$version.0"; done
+          for tool in vst2info-tool vst3info-tool; do
+            VERSION="$version" TOOL="$tool" perl -0pi -e 's/^(\[package\]\nname = "\Q$ENV{TOOL}\E"\nversion = )"[^"]*"/$1"$ENV{VERSION}"/m' "$tool/Cargo.toml"
+            VERSION="$version" TOOL="$tool" perl -0pi -e 's/^(name = "\Q$ENV{TOOL}\E"\nversion = )"[^"]*"/$1"$ENV{VERSION}"/m' "$tool/Cargo.lock"
+            for file in Cargo.toml Cargo.lock; do
+              if ! grep -A1 "^name = \"$tool\"$" "$tool/$file" | grep -qxF "version = \"$version\""; then
+                echo "Version in $tool/$file was not replaced" >&2
+                exit 1
+              fi
+            done
+          done
+
+      - name: Fetch VST3 SDK
+        # The bindings are only generated from the pluginterfaces submodule
+        run: |
+          git clone --depth 1 --branch "$VST3_SDK_TAG" https://github.com/steinbergmedia/vst3sdk.git vst3info-tool/vst3sdk
+          git -C vst3info-tool/vst3sdk submodule update --init --depth 1 pluginterfaces
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.builder == 'cargo' && matrix.target || '' }}
+
+      - name: Install cross
+        if: matrix.builder == 'cross'
+        run: cargo install cross --git https://github.com/cross-rs/cross --rev "$CROSS_REVISION" --locked
+
+      - name: Build
+        env:
+          BUILDER: ${{ matrix.builder }}
+          TARGET: ${{ matrix.target }}
+          SUFFIX: ${{ matrix.suffix }}
+          EXTENSION: ${{ matrix.extension }}
+        run: |
+          mkdir -p dist
+          for tool in vst2info-tool vst3info-tool; do
+            (cd "$tool" && "$BUILDER" build --release --locked --target "$TARGET")
+            cp "$tool/target/$TARGET/release/$tool$EXTENSION" "dist/$tool-$SUFFIX$EXTENSION"
+          done
+
+      - name: Upload VST tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: vst-tools-${{ matrix.suffix }}
+          path: dist/*
+          if-no-files-found: error

@@ -1,0 +1,53 @@
+# Packages the VST info tools as standalone command line tools: one zip per platform with vst2info-tool and
+# vst3info-tool inside, uploaded as the workflow artifact release-vst-tools for the release of build.yml.
+# Needs the artifacts vst-tools-* of vst-tools.yml from the same workflow run, so it is only called by build.yml.
+
+name: Package VST tools
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version of the release, from the manifest.xml of the DAW Project Tool
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download VST tools
+        uses: actions/download-artifact@v4
+        with:
+          pattern: vst-tools-*
+          merge-multiple: true
+          path: artifacts
+
+      - name: Package zips
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          mkdir -p dist
+          for suffix in mac-x64 mac-arm win linux; do
+            extension=''
+            [ "$suffix" = win ] && extension=.exe
+            staging="staging/$suffix"
+            mkdir -p "$staging"
+            for tool in vst2info-tool vst3info-tool; do
+              cp "artifacts/$tool-$suffix$extension" "$staging/$tool$extension"
+              # Artifacts lose their file permissions, zip keeps them
+              chmod +x "$staging/$tool$extension"
+            done
+            (cd "$staging" && zip -X "$GITHUB_WORKSPACE/dist/vst-info-tools_v${VERSION}_${suffix}.zip" *)
+          done
+
+      - name: Upload zips
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-vst-tools
+          path: dist/*.zip
+          if-no-files-found: error

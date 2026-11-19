@@ -1,8 +1,10 @@
-# Builds the VST info tools for all platforms and the Renoise tool packages (.xrnx) on every push/merge to main.
-# Each tool is packaged separately: a zip of the *contents* of its .xrnx folder (manifest.xml at the zip root),
-# with the shared code of lib/shared and the VST info tools inside.
-# Each package is uploaded as a workflow artifact and attached to a GitHub release of its own, named after the
-# manifest version of the tool.
+# Builds and releases everything on every push/merge to main, all with the version of the DAW Project Tool
+# (the <Version> of ffx.tools.DawProject.xrnx/manifest.xml):
+#   1. the VST info tools for all platforms, built only once (vst-tools.yml)
+#   2. the VST info tools as standalone command line tools, one zip per platform (package-vst-tools.yml)
+#   3. the Renoise tools DAW Project Tool and Plugin Migrator, with the VST info tools of 1. inside (package-xrnx.yml)
+# All files are attached to one GitHub release v<version>. A new version creates a new release, otherwise the files
+# of the existing release are replaced. The release is only published if all packages were built.
 
 name: Build xrnx
 
@@ -15,168 +17,81 @@ on:
 permissions:
   contents: read
 
-env:
-  # The VST3 SDK is not part of this repository, the vst3 crate generates its bindings from it
-  VST3_SDK_TAG: v3.7.13_build_42
-  CROSS_REVISION: baf457efc2555225af47963475bd70e8d2f5993f
-
 jobs:
-  build-vst-tools:
-    name: VST tools (${{ matrix.suffix }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - { os: macos-latest, builder: cargo, target: x86_64-apple-darwin, suffix: mac-x64, extension: '' }
-          - { os: macos-latest, builder: cargo, target: aarch64-apple-darwin, suffix: mac-arm, extension: '' }
-          - { os: ubuntu-latest, builder: cross, target: x86_64-pc-windows-gnu, suffix: win, extension: .exe }
-          - { os: ubuntu-latest, builder: cross, target: x86_64-unknown-linux-gnu, suffix: linux, extension: '' }
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Fetch VST3 SDK
-        # The bindings are only generated from the pluginterfaces submodule
+      - name: Read version from manifest
+        id: read
         run: |
-          git clone --depth 1 --branch "$VST3_SDK_TAG" https://github.com/steinbergmedia/vst3sdk.git vst3info-tool/vst3sdk
-          git -C vst3info-tool/vst3sdk submodule update --init --depth 1 pluginterfaces
+          version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' ffx.tools.DawProject.xrnx/manifest.xml)
+          if ! echo "$version" | grep -qE '^[0-9]+(\.[0-9]+)*$'; then
+            echo "Invalid version in manifest.xml: '$version'" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.builder == 'cargo' && matrix.target || '' }}
+  vst-tools:
+    name: VST tools
+    uses: ./.github/workflows/vst-tools.yml
 
-      - name: Install cross
-        if: matrix.builder == 'cross'
-        run: cargo install cross --git https://github.com/cross-rs/cross --rev "$CROSS_REVISION" --locked
+  package-vst-tools:
+    name: VST tools package
+    needs: [version, vst-tools]
+    uses: ./.github/workflows/package-vst-tools.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
 
-      - name: Build
-        env:
-          BUILDER: ${{ matrix.builder }}
-          TARGET: ${{ matrix.target }}
-          SUFFIX: ${{ matrix.suffix }}
-          EXTENSION: ${{ matrix.extension }}
-        run: |
-          mkdir -p dist
-          for tool in vst2info-tool vst3info-tool; do
-            (cd "$tool" && "$BUILDER" build --release --locked --target "$TARGET")
-            cp "$tool/target/$TARGET/release/$tool$EXTENSION" "dist/$tool-$SUFFIX$EXTENSION"
-          done
+  package-xrnx:
+    name: ${{ matrix.title }}
+    needs: [version, vst-tools]
+    strategy:
+      matrix:
+        include:
+          - { dir: ffx.tools.DawProject.xrnx, title: DAW Project Tool }
+          - { dir: ffx.tools.PluginMigrator.xrnx, title: Plugin Migrator }
+    uses: ./.github/workflows/package-xrnx.yml
+    with:
+      dir: ${{ matrix.dir }}
+      version: ${{ needs.version.outputs.version }}
 
-      - name: Upload VST tools
-        uses: actions/upload-artifact@v4
-        with:
-          name: vst-tools-${{ matrix.suffix }}
-          path: dist/*
-          if-no-files-found: error
-
-  package:
-    name: Package (${{ matrix.title }})
-    needs: build-vst-tools
+  release:
+    name: Release
+    needs: [version, package-vst-tools, package-xrnx]
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    strategy:
-      # a failing tool must not stop the release of the other one
-      fail-fast: false
-      matrix:
-        include:
-          # the DAW Project Tool keeps its tags v<version> and stays the latest release of the repository
-          - { dir: ffx.tools.DawProject.xrnx, title: DAW Project Tool, tagPrefix: v, latest: true }
-          - { dir: ffx.tools.PluginMigrator.xrnx, title: Plugin Migrator, tagPrefix: plugin-migrator-v, latest: false }
-    env:
-      TOOL_DIR: ${{ matrix.dir }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
-      - name: Strip development-only code
-        # Removes everything between "-- @build:skip-start" and "-- @build:skip-end" (inclusive) from all Lua files.
-        # -L and -R follow the symlink lib/shared to the shared code of the tools.
-        run: |
-          find -L "$TOOL_DIR" -name '*.lua' -print0 | xargs -0 sed -i '/-- @build:skip-start/,/-- @build:skip-end/d'
-          if grep -Rn '@build:skip\|_AUTO_RELOAD_DEBUG' "$TOOL_DIR" --include='*.lua'; then
-            echo "Development-only code left in the package" >&2
-            exit 1
-          fi
-
-      - name: Syntax check (LuaJIT)
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq luajit
-          find -L "$TOOL_DIR" -name '*.lua' -print0 | xargs -0 -n1 luajit -bl > /dev/null
-
-      - name: Read version from manifest
-        id: meta
-        run: |
-          id=$(sed -n 's:.*<Id>\(.*\)</Id>.*:\1:p' "$TOOL_DIR/manifest.xml")
-          version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' "$TOOL_DIR/manifest.xml")
-          echo "id=$id" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "file=${id}_v${version}.xrnx" >> "$GITHUB_OUTPUT"
-
-      - name: Insert version into main.lua
-        env:
-          VERSION: ${{ steps.meta.outputs.version }}
-        run: |
-          if ! echo "$VERSION" | grep -qE '^[0-9]+(\.[0-9]+)*$'; then
-            echo "Invalid version in manifest.xml: '$VERSION'" >&2
-            exit 1
-          fi
-          sed -i "s/^-- v@build:version@.*$/-- v$VERSION/" "$TOOL_DIR/main.lua"
-          if grep -q '@build:version@' "$TOOL_DIR/main.lua" || ! grep -qxF -- "-- v$VERSION" "$TOOL_DIR/main.lua"; then
-            echo "Version placeholder in main.lua was not replaced" >&2
-            exit 1
-          fi
-
-      - name: Remove binaries of the checkout
-        # in the Plugin Migrator, bin is a symlink to the binaries of the DAW Project Tool, only the link is removed
-        run: rm -rf "$TOOL_DIR/bin"
-
-      - name: Download VST tools
+      - name: Download packages
         uses: actions/download-artifact@v4
         with:
-          pattern: vst-tools-*
+          pattern: release-*
           merge-multiple: true
-          path: ${{ env.TOOL_DIR }}/bin
-
-      - name: Make VST tools executable
-        # Artifacts lose their file permissions
-        run: |
-          for tool in vst2info-tool vst3info-tool; do
-            for file in "$tool-mac-x64" "$tool-mac-arm" "$tool-win.exe" "$tool-linux"; do
-              chmod +x "$TOOL_DIR/bin/$file"
-            done
-          done
-
-      - name: Package xrnx
-        run: |
-          mkdir -p dist
-          cd "$TOOL_DIR"
-          # zip follows the symlink lib/shared and packs the files themselves, so no -y here
-          zip -r -X "../dist/${{ steps.meta.outputs.file }}" . -x 'tmp/*' 'examples/*' 'config.json' 'preferences.xml' '.gitignore' '.DS_Store' '*/.DS_Store'
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.meta.outputs.id }}_v${{ steps.meta.outputs.version }}
-          path: dist/${{ steps.meta.outputs.file }}
+          path: dist
 
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ matrix.tagPrefix }}${{ steps.meta.outputs.version }}
-          TITLE: ${{ matrix.title }} v${{ steps.meta.outputs.version }}
-          LATEST: ${{ matrix.latest }}
-          FILE: dist/${{ steps.meta.outputs.file }}
+          TAG: v${{ needs.version.outputs.version }}
+          TITLE: DAW Project Tool v${{ needs.version.outputs.version }}
         run: |
+          ls -l dist
           if gh release view "$TAG" > /dev/null 2>&1; then
-            # Same manifest version: replace the package of the existing release.
-            gh release upload "$TAG" "$FILE" --clobber
+            # Same version: replace the files of the existing release.
+            gh release upload "$TAG" dist/* --clobber
           else
             # The newest commit on main usually is a merge commit, so the message of the commit before is used.
             notes=$(git log -2 --pretty=format:%B | tail -n1)
-            gh release create "$TAG" "$FILE" --target "$GITHUB_SHA" --title "$TITLE" --notes "$notes" --latest="$LATEST"
+            gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TITLE" --notes "$notes" --latest
           fi

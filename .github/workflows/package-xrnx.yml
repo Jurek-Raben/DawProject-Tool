@@ -1,0 +1,106 @@
+# Packages one Renoise tool: a zip of the *contents* of its .xrnx folder (manifest.xml at the zip root),
+# with the shared code of lib/shared and the VST info tools inside. The package is uploaded as the workflow artifact
+# release-<tool id> for the release of build.yml.
+# Needs the artifacts vst-tools-* of vst-tools.yml from the same workflow run, so it is only called by build.yml.
+
+name: Package xrnx
+
+on:
+  workflow_call:
+    inputs:
+      dir:
+        description: Folder of the tool, e.g. ffx.tools.DawProject.xrnx
+        required: true
+        type: string
+      version:
+        description: Version of the release, from the manifest.xml of the DAW Project Tool
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    env:
+      TOOL_DIR: ${{ inputs.dir }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Strip development-only code
+        # Removes everything between "-- @build:skip-start" and "-- @build:skip-end" (inclusive) from all Lua files.
+        # -L and -R follow the symlink lib/shared to the shared code of the tools.
+        run: |
+          find -L "$TOOL_DIR" -name '*.lua' -print0 | xargs -0 sed -i '/-- @build:skip-start/,/-- @build:skip-end/d'
+          if grep -Rn '@build:skip\|_AUTO_RELOAD_DEBUG' "$TOOL_DIR" --include='*.lua'; then
+            echo "Development-only code left in the package" >&2
+            exit 1
+          fi
+
+      - name: Syntax check (LuaJIT)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq luajit
+          find -L "$TOOL_DIR" -name '*.lua' -print0 | xargs -0 -n1 luajit -bl > /dev/null
+
+      - name: Insert version into manifest.xml
+        # All tools share the version of the DAW Project Tool, the version in the other manifests is only for development
+        run: |
+          sed -i "s:<Version>.*</Version>:<Version>$VERSION</Version>:" "$TOOL_DIR/manifest.xml"
+          if ! grep -qF "<Version>$VERSION</Version>" "$TOOL_DIR/manifest.xml"; then
+            echo "Version in manifest.xml was not replaced" >&2
+            exit 1
+          fi
+
+      - name: Insert version into main.lua
+        run: |
+          sed -i "s/^-- v@build:version@.*$/-- v$VERSION/" "$TOOL_DIR/main.lua"
+          if grep -q '@build:version@' "$TOOL_DIR/main.lua" || ! grep -qxF -- "-- v$VERSION" "$TOOL_DIR/main.lua"; then
+            echo "Version placeholder in main.lua was not replaced" >&2
+            exit 1
+          fi
+
+      - name: Read tool id
+        id: meta
+        run: |
+          id=$(sed -n 's:.*<Id>\(.*\)</Id>.*:\1:p' "$TOOL_DIR/manifest.xml")
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          echo "file=${id}_v${VERSION}.xrnx" >> "$GITHUB_OUTPUT"
+
+      - name: Remove binaries of the checkout
+        # in the Plugin Migrator, bin is a symlink to the binaries of the DAW Project Tool, only the link is removed
+        run: rm -rf "$TOOL_DIR/bin"
+
+      - name: Download VST tools
+        uses: actions/download-artifact@v4
+        with:
+          pattern: vst-tools-*
+          merge-multiple: true
+          path: ${{ inputs.dir }}/bin
+
+      - name: Make VST tools executable
+        # Artifacts lose their file permissions
+        run: |
+          for tool in vst2info-tool vst3info-tool; do
+            for file in "$tool-mac-x64" "$tool-mac-arm" "$tool-win.exe" "$tool-linux"; do
+              chmod +x "$TOOL_DIR/bin/$file"
+            done
+          done
+
+      - name: Package xrnx
+        run: |
+          mkdir -p dist
+          cd "$TOOL_DIR"
+          # zip follows the symlink lib/shared and packs the files themselves, so no -y here
+          zip -r -X "../dist/${{ steps.meta.outputs.file }}" . -x 'tmp/*' 'examples/*' 'config.json' 'preferences.xml' '.gitignore' '.DS_Store' '*/.DS_Store'
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ steps.meta.outputs.id }}
+          path: dist/${{ steps.meta.outputs.file }}
+          if-no-files-found: error

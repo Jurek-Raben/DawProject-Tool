@@ -232,6 +232,8 @@ So I am not responsible for any damage these binaries could do to your system an
 
 [Automatic release builds](https://github.com/Jurek-Raben/DawProject-Tool/releases)
 
+Each release contains the DAW Project Tool, the Plugin Migrator and the VST info helper tools as standalone command line tools, with one zip per platform.
+
 ## DAW specific workarounds
 
 Bitwig loads all the exports just fine, just like it should be. Fender Studio 8 / Studio One 7.2+ loads VST2 and VST3, but loses the automation of AudioUnits. Cubase 15/16 loads the exports with the options described in [DAW compatibility](#daw-compatibility).
@@ -250,7 +252,7 @@ Bitwig loads all the exports just fine, just like it should be. Fender Studio 8 
 
 #### Helper tools
 
-The tool can use VST2/3 info tools to extract the missing plugin infos, which I coded in Rust. The release packages include pre-built binaries in the `/bin` sub directory, for macOS (arm/intel), windows x86_64 and linux x86_64. See [Getting the helper tools to run](#getting-the-helper-tools-to-run).
+The tool can use VST2/3 info tools to extract the missing plugin infos, which I coded in Rust. The release packages include pre-built binaries in the `/bin` sub directory, for macOS (arm/intel), windows x86_64 and linux x86_64. See [Getting the helper tools to run](#getting-the-helper-tools-to-run). They are also released on their own as command line tools, see [Download](#download).
 
 #### Manual workarounds
 
@@ -262,7 +264,7 @@ The binaries are not part of the repository, so build these first with `./build_
 
 These tools try to circumvent the current limitations of the Renoise API. The VST2/VST3 tool will give detailed infos for a given plugin path. The code they share, like the command line, the output and the health check, is located in `vst-tool-common`.
 
-The tools require Rust / cargo to be installed on the system. The VST3 tool also requires the VST3 SDK under `vst3info-tool/vst3sdk`, see `.github/workflows/build.yml` for the used version. On macOS the script builds for all platforms, which also requires `cross` and Docker. On Windows and Linux it only builds for the current system.
+The tools require Rust / cargo to be installed on the system. The VST3 tool also requires the VST3 SDK under `vst3info-tool/vst3sdk`, see `.github/workflows/vst-tools.yml` for the used version. On macOS the script builds for all platforms, which also requires `cross` and Docker. On Windows and Linux it only builds for the current system.
 
 For packing the tool itself, create a `build` directory and use `./build_for_mac_linux.sh`. Windows users can test the same script, which should work in Windows 11 at least. In contrast to the release builds, this package still contains the development-only code.
 
@@ -276,10 +278,6 @@ For packing the tool itself, create a `build` directory and use `./build_for_mac
 #### Unique preset file names
 
 Bitwig caches the files of a project by their name. It would load the presets of a previous export with the same names, even after importing the new one. So all the preset file names contain a timestamp of the export.
-
-#### Releases
-
-Every push to `main` builds the helper tools for all platforms and packages the tool. The version comes from `manifest.xml`: a new version creates a new release, otherwise the package of the existing release is replaced. Code between `-- @build:skip-start` and `-- @build:skip-end` is removed from the package, and the placeholder `@build:version@` in `main.lua` is replaced with the version.
 
 #### Suggestions for the API
 
