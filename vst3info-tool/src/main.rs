@@ -10,7 +10,10 @@
  *   vst3info-tool <plugin path> [--parameter-values] [--preset <preset path>] [--class-id <class id>]
  *   vst3info-tool --healthcheck [plugin paths...]
  *   vst3info-tool --migration-info <plugin path>
- *   vst3info-tool --remap-parameters <plugin path> <class id> <replaced class id> [old parameter ids...] * ------------------------------------------------------------------------
+ *   vst3info-tool --remap-parameters <plugin path> <class id> <replaced class id> [old parameter ids...]
+ *   vst3info-tool --help
+ *   All commands accept --output=text|json|inline, see the help page.
+ * ------------------------------------------------------------------------
  */
 
 mod console_silencer;
@@ -44,6 +47,7 @@ fn main() {
         .unwrap_or_else(|error| output::exit_with_error(&error));
 
     match command {
+        Command::Help => print!("{}", help_page()),
         Command::Healthcheck { plugin_paths } => healthcheck::run(
             ToolIdentity {
                 name: env!("CARGO_PKG_NAME"),
@@ -91,6 +95,46 @@ fn main() {
                 .unwrap_or_else(|error| output::exit_with_error(&error));
         }
     }
+}
+
+fn help_page() -> String {
+    format!(
+        "\
+{name} {version}
+Reads the infos of VST3 plugins, as used by the DAW Project Tool and the Plugin Migrator for Renoise.
+
+Usage:
+  {name} <plugin path> [--parameter-values] [--preset <preset path>] [--class-id <class id>]
+  {name} --migration-info <plugin path>
+  {name} --remap-parameters <plugin path> <class id> <replaced class id> [old parameter ids...]
+  {name} --healthcheck [plugin paths...]
+  {name} --help
+
+Commands:
+  <plugin path>
+      Loads the plugin and prints its name, vendor, buses and automatable parameters.
+      --parameter-values      also lists the displayed values of each parameter
+      --preset <preset path>  loads a .vstpreset first, for plugins whose parameters depend on their state
+      --class-id <class id>   reads this class of a module with several plugins
+  --migration-info <plugin path>
+      Lists the older plugins (e.g. VST2) the plugin can replace. Reads the moduleinfo.json of the plugin
+      and only loads the plugin if there is none.
+  --remap-parameters <plugin path> <class id> <replaced class id> [old parameter ids...]
+      Asks the plugin which of its parameters replace the given parameters of the replaced plugin.
+  --healthcheck [plugin paths...]
+      Checks that the tool starts and can access the given plugins, without loading them.
+  --help, -h
+      Prints this help page.
+
+Output:
+  --output=text    readable console output (default)
+  --output=json    formatted JSON
+  --output=inline  JSON in a single line between @@VSTINFO_BEGIN@@ and @@VSTINFO_END@@, used by the Renoise tools
+  Errors are printed to stderr and end the tool with exit code 1.
+",
+        name = env!("CARGO_PKG_NAME"),
+        version = env!("CARGO_PKG_VERSION")
+    )
 }
 
 /// The argument following a switch

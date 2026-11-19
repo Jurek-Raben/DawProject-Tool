@@ -1,13 +1,18 @@
 //! The command line of the VST info tools.
 
+use crate::output::{self, OutputMode};
 use std::ffi::OsString;
 use std::path::PathBuf;
 
 const HEALTHCHECK_SWITCH: &str = "--healthcheck";
 const MIGRATION_INFO_SWITCH: &str = "--migration-info";
 const REMAP_PARAMETERS_SWITCH: &str = "--remap-parameters";
+const HELP_SWITCHES: [&str; 2] = ["--help", "-h"];
+const OUTPUT_SWITCH_PREFIX: &str = "--output=";
 
 pub enum Command {
+    /// Prints the help page of the tool.
+    Help,
     /// Reports that the tool is able to start and whether it can access the given plugins.
     Healthcheck { plugin_paths: Vec<PathBuf> },
     /// Reports which older plugins a plugin can replace, e.g. a VST3 replacing its VST2 version.
@@ -26,7 +31,33 @@ pub enum Command {
     },
 }
 
+/// Parses the command line. The output switch and the help switch are allowed at any position.
+/// The output mode is set before any error is returned, so the error is printed in the requested mode.
 pub fn parse_command(arguments: impl Iterator<Item = OsString>) -> Result<Command, String> {
+    let mut output_mode = Ok(OutputMode::Text);
+    let mut help_requested = false;
+    let mut command_arguments = Vec::new();
+
+    for argument in arguments {
+        if let Some(mode_name) = argument.to_str().and_then(|text| text.strip_prefix(OUTPUT_SWITCH_PREFIX)) {
+            output_mode = OutputMode::parse(mode_name);
+        } else if HELP_SWITCHES.iter().any(|switch| argument == *switch) {
+            help_requested = true;
+        } else {
+            command_arguments.push(argument);
+        }
+    }
+
+    output::set_mode(*output_mode.as_ref().unwrap_or(&OutputMode::Text));
+    output_mode?;
+
+    if help_requested || command_arguments.is_empty() {
+        return Ok(Command::Help);
+    }
+    parse_tool_command(command_arguments.into_iter())
+}
+
+fn parse_tool_command(arguments: impl Iterator<Item = OsString>) -> Result<Command, String> {
     let mut arguments = arguments;
     let first_argument = arguments
         .next()

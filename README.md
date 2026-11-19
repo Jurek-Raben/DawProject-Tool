@@ -121,7 +121,9 @@ You can also run the health check of a helper tool manually, optionally with the
 ./vst3info-tool-mac-arm --healthcheck "/Library/Audio/Plug-Ins/VST3/MyPlugin.vst3"
 ```
 
-To really load a plugin, leave out `--healthcheck`. If it works, the output contains the infos as JSON between `@@VSTINFO_BEGIN@@` and `@@VSTINFO_END@@`. Otherwise you will see the actual error message.
+To really load a plugin, leave out `--healthcheck`. If it works, the infos are printed as readable text. Otherwise you will see the actual error message. `--help` lists all commands and switches.
+
+The output format is chosen with `--output`: `text` (the default), `json` for formatted JSON, or `inline` for JSON in a single line between `@@VSTINFO_BEGIN@@` and `@@VSTINFO_END@@`. The Renoise tools use `inline`, since plugins may print to the console by themselves.
 
 The VST3 tool can also list the scales of the parameters, optionally after loading a preset. This is useful for adding a new plugin substitution. Plugins that create parameters depending on their state, like UVI Shade, need the preset. On other systems than macOS such a plugin might not finish loading the state.
 

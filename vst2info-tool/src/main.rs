@@ -6,6 +6,8 @@
  * Usage:
  *   vst2info-tool <plugin path> [id of a plugin inside of a shell]
  *   vst2info-tool --healthcheck [plugin paths...]
+ *   vst2info-tool --help
+ *   All commands accept --output=text|json|inline, see the help page.
  *
  * Licensed under CC Attribution-NonCommercial-ShareAlike 4.0 International
  * Info here: https://creativecommons.org/licenses/by-nc-sa/4.0/
@@ -31,6 +33,7 @@ fn main() {
         .unwrap_or_else(|error| output::exit_with_error(&error));
 
     match command {
+        Command::Help => print!("{}", help_page()),
         Command::Healthcheck { plugin_paths } => healthcheck::run(
             ToolIdentity {
                 name: env!("CARGO_PKG_NAME"),
@@ -54,6 +57,38 @@ fn main() {
                 .unwrap_or_else(|error| output::exit_with_error(&error));
         }
     }
+}
+
+fn help_page() -> String {
+    format!(
+        "\
+{name} {version}
+Reads the infos of VST2 plugins, as used by the DAW Project Tool for Renoise.
+
+Usage:
+  {name} <plugin path> [shell plugin id]
+  {name} --healthcheck [plugin paths...]
+  {name} --help
+
+Commands:
+  <plugin path> [shell plugin id]
+      Loads the plugin and prints its name, vendor, unique id, version and its numbers of presets,
+      parameters, inputs and outputs.
+      A shell plugin (e.g. WaveShell) lists the plugins it contains, unless the id of one of them is given.
+  --healthcheck [plugin paths...]
+      Checks that the tool starts and can access the given plugins, without loading them.
+  --help, -h
+      Prints this help page.
+
+Output:
+  --output=text    readable console output (default)
+  --output=json    formatted JSON
+  --output=inline  JSON in a single line between @@VSTINFO_BEGIN@@ and @@VSTINFO_END@@, used by the Renoise tools
+  Errors are printed to stderr and end the tool with exit code 1.
+",
+        name = env!("CARGO_PKG_NAME"),
+        version = env!("CARGO_PKG_VERSION")
+    )
 }
 
 fn parse_shell_plugin_id(additional_arguments: &[OsString]) -> Result<Option<i32>, String> {

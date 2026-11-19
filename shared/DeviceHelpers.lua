@@ -17,6 +17,7 @@ DeviceHelpers.cache = Cache()
 
 InfoToolOutputBegin = '@@VSTINFO_BEGIN@@'
 InfoToolOutputEnd = '@@VSTINFO_END@@'
+InfoToolOutputSwitch = '--output=inline'
 
 function DeviceHelpers:getParameterChunk(device)
   local activePresetData = device.active_preset_data
@@ -336,7 +337,9 @@ end
 
 -- Executes within bin directory, since some plugins will generate trash file data.
 -- stderr is included, because the tools report their errors there.
+-- The tools print readable text by default, the inline mode encloses the JSON result in markers.
 function DeviceHelpers:executeInfoTool(vstToolPath, argumentsString)
+  argumentsString = InfoToolOutputSwitch .. ' ' .. argumentsString
   local toolCommand
   if (Helpers:getShortOSString() == 'win') then
     toolCommand = 'cd bin && .\\' .. vstToolPath .. ' ' .. argumentsString .. ' 2>&1'
