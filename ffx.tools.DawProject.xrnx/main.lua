@@ -24,6 +24,8 @@ require('lib/shared/DeviceHelpers')
 require('lib/ReduxPluginHelpers')
 require('lib/shared/Vst3Migration')
 require('lib/shared/PluginMigrationData')
+require('lib/shared/MigratablePlugins')
+require('lib/shared/MigratablePluginsDialog')
 require('lib/shared/Cache')
 require('lib/ProjectFiles')
 require('lib/MeldaPreset')
@@ -44,6 +46,7 @@ Tool = renoise.tool()
 local progressDialog = nil
 local healthCheckDialog = nil
 local substitutionDialog = nil
+local migratablePluginsDialog = nil
 local backgroundTask = nil
 local config = {}
 
@@ -164,6 +167,32 @@ end
 local MIGRATION_MENU_PREFIX = "Main Menu:Tools:ffx.tools.DawProject:"
 local MIGRATION_MENU_BUILD = MIGRATION_MENU_PREFIX .. "Build plugin migration data..."
 local MIGRATION_MENU_REFRESH = MIGRATION_MENU_PREFIX .. "Refresh plugin migration data..."
+local MIGRATION_MENU_LIST = MIGRATION_MENU_PREFIX .. "List migratable plugins..."
+
+-- The progress dialog closes by itself, when the list is shown
+local LIST_PROGRESS_CLOSE_SECONDS = 1
+
+-- Lists the installed VST2 plugins, which an installed VST3 version can replace. retryFailed also reads the
+-- plugins again, which failed before.
+function DawProject:listMigratablePlugins(retryFailed)
+  backgroundTask:stop()
+  migratablePluginsDialog:close()
+  backgroundTask:run(
+    'Listing migratable plugins',
+    function()
+      local result = MigratablePlugins:scan(progressDialog, retryFailed)
+      local hint = nil
+      if (not PluginMigrationData:exists()) then
+        hint = 'The plugin migration data is not built yet, it finds more VST3 versions: ' ..
+            'Tools > ffx.tools.DawProject > Build plugin migration data...'
+      end
+      migratablePluginsDialog:show(result, hint, function() self:listMigratablePlugins(true) end)
+    end,
+    'Migratable plugins listed!',
+    'Listing migratable plugins failed!',
+    LIST_PROGRESS_CLOSE_SECONDS
+  )
+end
 
 -- The first scan builds the data, every later one refreshes it
 function DawProject:refreshMigrationMenu()
@@ -276,6 +305,7 @@ function DawProject:__init()
 
     MenuEntry:add("Main Menu:File:Export Song to .dawproject...", function() self:export() end)
     self:refreshMigrationMenu()
+    MenuEntry:add(MIGRATION_MENU_LIST, function() self:listMigratablePlugins(false) end)
     self:watchPluginScans()
 
     -- TODO import
@@ -297,12 +327,14 @@ function DawProject:__init()
     progressDialog:close()
     healthCheckDialog:close()
     substitutionDialog:close()
+    migratablePluginsDialog:close()
     Notifiers:remove(Song.selected_instrument_index_observable, instrSwitchListener)
   end
 
   progressDialog = ProgressDialog()
   healthCheckDialog = HealthCheckDialog()
   substitutionDialog = SubstitutionDialog()
+  migratablePluginsDialog = MigratablePluginsDialog()
   backgroundTask = BackgroundTask(progressDialog)
 
   Notifiers:add(Tool.app_idle_observable, toolIdle)

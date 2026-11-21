@@ -2,7 +2,7 @@
 <RenoiseScriptingTool doc_version="0">
   <ApiVersion>6.2</ApiVersion>
   <Id>ffx.tools.PluginMigrator</Id>
-  <Version>0.2.6</Version>
+  <Version>0.2.7</Version>
   <Author>Jurek Raben</Author>
   <Name>Plugin Migrator</Name>
   <Category>Tools</Category>

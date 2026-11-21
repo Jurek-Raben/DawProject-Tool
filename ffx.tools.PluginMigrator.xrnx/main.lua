@@ -22,6 +22,8 @@ require('lib/shared/Cache')
 require('lib/shared/DeviceHelpers')
 require('lib/shared/PluginMigrationData')
 require('lib/shared/Vst3Migration')
+require('lib/shared/MigratablePlugins')
+require('lib/shared/MigratablePluginsDialog')
 
 
 --------------------------------------------------------------------------------
@@ -32,6 +34,7 @@ Song = renoise.song() -- needs a refresh later
 Tool = renoise.tool()
 local progressDialog = nil
 local backgroundTask = nil
+local migratablePluginsDialog = nil
 
 
 --------------------------------------------------------------------------------
@@ -608,6 +611,32 @@ end
 local SCAN_MENU_PREFIX = 'Main Menu:Tools:Plugin Migrator:'
 local SCAN_MENU_BUILD = SCAN_MENU_PREFIX .. 'Build plugin migration data...'
 local SCAN_MENU_REFRESH = SCAN_MENU_PREFIX .. 'Refresh plugin migration data...'
+local LIST_MENU = SCAN_MENU_PREFIX .. 'List migratable plugins...'
+
+-- The progress dialog closes by itself, when the list is shown
+local LIST_PROGRESS_CLOSE_SECONDS = 1
+
+-- Lists the installed VST2 plugins, which an installed VST3 version can replace. retryFailed also reads the
+-- plugins again, which failed before.
+function PluginMigrator:listMigratablePlugins(retryFailed)
+  backgroundTask:stop()
+  migratablePluginsDialog:close()
+  backgroundTask:run(
+    'Listing migratable plugins',
+    function()
+      local result = MigratablePlugins:scan(progressDialog, retryFailed)
+      local hint = nil
+      if (not PluginMigrationData:exists()) then
+        hint = 'The plugin migration data is not built yet, it finds more VST3 versions: ' ..
+            'Tools > Plugin Migrator > Build plugin migration data...'
+      end
+      migratablePluginsDialog:show(result, hint, function() self:listMigratablePlugins(true) end)
+    end,
+    'Migratable plugins listed!',
+    'Listing migratable plugins failed!',
+    LIST_PROGRESS_CLOSE_SECONDS
+  )
+end
 
 -- The first scan builds the data, every later one refreshes it
 function PluginMigrator:refreshScanMenu()
@@ -664,8 +693,10 @@ end
 function PluginMigrator:__init()
   progressDialog = ProgressDialog('Plugin Migrator')
   backgroundTask = BackgroundTask(progressDialog)
+  migratablePluginsDialog = MigratablePluginsDialog()
 
   self:refreshScanMenu()
+  MenuEntry:add(LIST_MENU, function() self:listMigratablePlugins(false) end)
   self:watchSelection()
 
   Notifiers:add(Tool.app_new_document_observable, function()
@@ -675,6 +706,7 @@ function PluginMigrator:__init()
   Notifiers:add(Tool.app_release_document_observable, function()
     backgroundTask:stop()
     progressDialog:close()
+    migratablePluginsDialog:close()
   end)
 end
 

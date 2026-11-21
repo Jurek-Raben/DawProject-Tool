@@ -1,6 +1,6 @@
 [package]
 name = "vst3info-tool"
-version = "0.2.6"
+version = "0.2.7"
 edition = "2024"
 "authors" = ["Jurek Raben"]
 repository = "https://github.com/Jurek-Raben/DawProject-Tool"

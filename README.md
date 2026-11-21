@@ -218,6 +218,12 @@ The VST3 version has other parameter ids than the indices of the VST2 version, s
 
 The automation of the parameters without a match is skipped with a warning. The log tells how the parameters were mapped, e.g. `are mapped to its VST3 version, by index and name`.
 
+`Tools > ffx.tools.DawProject > List migratable plugins...` (also in the Plugin Migrator, under `Tools > Plugin Migrator`) shows a sortable table of the installed VST2 plugins, which an installed VST3 version can replace. A click on a column header sorts by it, another click reverses the order. For each plugin it shows the VST3 version, how it was found (declaration, Steinberg or MeldaProduction class id), and how its automation is mapped: "Mapped by plugin" if the VST3 version supports `IRemapParamID`, otherwise "Index and name" (steps 2 and 3 above).
+
+- The plugin database of Renoise doesn't know the VST2 ids, so the VST2 helper tool loads each VST2 plugin once, and the VST3 helper tool asks each found VST3 version once. The first listing takes a while, plugins with a copy protection might show their dialogs.
+- The results are saved in the preferences directory of Renoise, e.g. `~/Library/Preferences/Renoise/V3.5.4/DawProjectMigratablePlugins.json`. A later listing only reads new and changed plugins, the "Refresh" button of the table also the ones that failed before.
+- Without the plugin migration data only the derived class ids are found, the table then shows a hint.
+
 #### Export for Cubase
 
 The DAWs expect the channel of a group at different places. Cubase only routes the tracks of a group into it, if the group is a separate group channel. Bitwig and Studio only keep the plugins of a group, if its channel is inside of the group. So this option is only for Cubase, by default the export works for the other DAWs.

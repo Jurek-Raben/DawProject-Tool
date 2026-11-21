@@ -372,6 +372,23 @@ local function findTargetFilePath(target, deviceRole)
   return DeviceHelpers:findPluginFilePath(pathPrefix .. target.classId)
 end
 
+-- The file of the VST3 version Renoise knows, or nil
+function Vst3Migration:findTargetFilePath(target, deviceRole)
+  return findTargetFilePath(target, deviceRole)
+end
+
+-- Whether the VST3 version tells the new ids of the VST2 parameters by itself (IRemapParamID). Returns true or
+-- false, or nil and the reason, if the plugin could not be asked. It is loaded for this, so it takes a while.
+function Vst3Migration:isRemapSupported(filePath, target)
+  local arguments = { '--remap-parameters', DeviceHelpers:quotePathForConsole(filePath), target.classId,
+    target.replacedClassId }
+  local result, problem = runVst3Tool(table.concat(arguments, ' '))
+  if (result == nil) then
+    return nil, problem
+  end
+  return result.supported == true
+end
+
 -- The parameters of the VST3 version as list of { id, index, title }, or nil and the reason
 function Vst3Migration:readParameters(target, deviceRole)
   local filePath = findTargetFilePath(target, deviceRole)
